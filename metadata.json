@@ -1,0 +1,6 @@
+{
+  "name": "Offline Inventory System",
+  "description": "A fully offline, local inventory management system with user roles, POS cart flow, stock variants, return workflows, audit logging, and automated backups.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

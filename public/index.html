@@ -1,0 +1,1110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Offline Local Inventory Management System</title>
+  <link rel="stylesheet" href="/css/main.css">
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+
+  <!-- 1. LOGIN INTERFACE -->
+  <div id="login-container" class="login-container">
+    <div id="login-card" class="glass-card login-card">
+      <div class="login-header">
+        <div class="login-logo">
+          <i data-lucide="package"></i> LOCAL <span>INVENTORY</span>
+        </div>
+        <p class="subtitle">Enter credentials to access offline database</p>
+      </div>
+
+      <div id="login-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 16px; text-align: center;"></div>
+
+      <form id="login-form">
+        <div class="form-group">
+          <label for="login-username">Username</label>
+          <input type="text" id="login-username" class="input-control" placeholder="e.g. owner" required autocomplete="username">
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" class="input-control" placeholder="••••••••" required autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center; padding: 12px; margin-top: 10px;">
+          Log In <i data-lucide="arrow-right"></i>
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. MAIN APP CONTAINER -->
+  <div id="app-layout" class="app-layout">
+    
+    <!-- Sidebar -->
+    <aside id="sidebar" class="sidebar glass">
+      <div class="sidebar-header">
+        <div class="shop-name" id="display-shop-name">My Retail Business</div>
+        <p class="subtitle" style="font-size: 10px; text-transform: uppercase; font-weight: 600; color: var(--accent-success); margin-top: 4px;">● Offline Local PC</p>
+      </div>
+
+      <div class="user-badge">
+        <div class="user-avatar" id="avatar-letters">OW</div>
+        <div class="user-info">
+          <div class="user-fullname" id="display-user-fullname">Shop Owner</div>
+          <div class="user-role" id="display-user-role">Owner</div>
+        </div>
+      </div>
+
+      <ul class="nav-links">
+        <li class="nav-item active" id="nav-dashboard">
+          <button onclick="switchView('dashboard')"><i data-lucide="layout-dashboard"></i> <span class="nav-label">Dashboard</span></button>
+        </li>
+        <li class="nav-item" id="nav-pos">
+          <button onclick="switchView('pos')"><i data-lucide="shopping-cart"></i> <span class="nav-label">POS (Sales Cart)</span></button>
+        </li>
+        <li class="nav-item" id="nav-inventory">
+          <button onclick="switchView('inventory')"><i data-lucide="boxes"></i> <span class="nav-label">Inventory Stock</span></button>
+        </li>
+        <li class="nav-item" id="nav-returns">
+          <button onclick="switchView('returns')"><i data-lucide="undo-2"></i> <span class="nav-label">Return Workflows</span></button>
+        </li>
+        <li class="nav-item" id="nav-employees">
+          <button onclick="switchView('employees')"><i data-lucide="users"></i> <span class="nav-label">Manage Employees</span></button>
+        </li>
+        <li class="nav-item" id="nav-reports">
+          <button onclick="switchView('reports')"><i data-lucide="line-chart"></i> <span class="nav-label">Reports & Insights</span></button>
+        </li>
+        <li class="nav-item" id="nav-audit">
+          <button onclick="switchView('audit')"><i data-lucide="history"></i> <span class="nav-label">Audit Trails</span></button>
+        </li>
+        <li class="nav-item" id="nav-backups">
+          <button onclick="switchView('backups')"><i data-lucide="database"></i> <span class="nav-label">System Backups</span></button>
+        </li>
+        <li class="nav-item" id="nav-settings">
+          <button onclick="switchView('settings')"><i data-lucide="settings"></i> <span class="nav-label">Configurations</span></button>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <button class="btn-logout" onclick="performLogout()">
+          <i data-lucide="log-out"></i> <span class="nav-label">Leave System</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Content Workspace -->
+    <main class="main-wrapper" id="main-wrapper">
+      <div class="views">
+
+        <!-- A. DASHBOARD PANEL -->
+        <section id="panel-dashboard" class="view-panel active">
+          <div class="view-header">
+            <div>
+              <h1>Performance Dashboard</h1>
+              <p class="subtitle">Real-time localized diagnostics for ETB retail metrics</p>
+            </div>
+            <div class="btn" onclick="fetchDashboardStats()"><i data-lucide="refresh-cw"></i> Refresh</div>
+          </div>
+          
+          <div class="bento-grid">
+            <div class="kpi-card glass" style="border-left: 4px solid var(--accent-color);">
+              <div class="kpi-title">Revenue (Today)</div>
+              <div class="kpi-value" id="kpi-revenue">0.00 ETB</div>
+              <div class="kpi-desc">Gross transactions</div>
+            </div>
+            <div class="kpi-card glass" style="border-left: 4px solid var(--accent-success);">
+              <div class="kpi-title">Profit (Today)</div>
+              <div class="kpi-value" id="kpi-profit">0.00 ETB</div>
+              <div class="kpi-desc">Net profit return (Sell - Buy)</div>
+            </div>
+            <div class="kpi-card glass" style="border-left: 4px solid var(--accent-warning);">
+              <div class="kpi-title">Low Stock Indicators</div>
+              <div class="kpi-value" id="kpi-lowstock" style="color: var(--accent-warning);">0</div>
+              <div class="kpi-desc">Critical threshold warnings</div>
+            </div>
+            <div class="kpi-card glass" style="border-left: 4px solid #8b5cf6;">
+              <div class="kpi-title">Sales Checkouts</div>
+              <div class="kpi-value" id="kpi-sales">0</div>
+              <div class="kpi-desc">Completed invoices today</div>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px;">
+            <div class="glass-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2>Today's Metrics</h2>
+                <i data-lucide="trending-up" style="color: var(--accent-success);"></i>
+              </div>
+              <p class="subtitle" style="margin-bottom: 12px;">Top selling product today:</p>
+              <div style="padding: 16px; background: rgba(255, 255, 255, 0.02); border: 1px solid var(--border-glass); border-radius: 8px; font-weight: 600; font-size: 15px; color: #fff; margin-bottom: 20px;" id="dashboard-top-product">
+                Checking records...
+              </div>
+            </div>
+
+            <!-- Employee Performance Card (Only renders if count >= 2) -->
+            <div class="glass-card" id="employee-champion-card" style="display: none;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2>Top Employee today</h2>
+                <i data-lucide="award" style="color: var(--accent-warning);"></i>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 14px;">
+                <div class="user-avatar" style="background: var(--accent-warning);">CH</div>
+                <div>
+                  <div style="font-weight: 600; color: #fff;" id="champion-name">-</div>
+                  <div style="font-size: 11px; color: var(--text-secondary);">Highest performer</div>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid var(--border-glass); padding-top: 10px;">
+                <span class="text-secondary">Completed: <b style="color: #fff;" id="champion-tx">0 sales</b></span>
+                <span class="text-secondary">Revenue: <b style="color: var(--accent-success);" id="champion-revenue">0.00 ETB</b></span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- B. POS (SALES CART) PANEL -->
+        <section id="panel-pos" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Point of Sale (POS)</h1>
+              <p class="subtitle">Fast interactive checkout lanes ranked by highest popularity first</p>
+            </div>
+          </div>
+
+          <div class="pos-layout-grid">
+            <!-- Catalog Side -->
+            <div class="pos-catalog">
+              <div class="pos-toolbar glass-card" style="padding: 12px; gap: 16px;">
+                <div style="position: relative; flex-grow: 1;">
+                  <i data-lucide="search" style="position: absolute; left: 12px; top: 10px; width: 16px; height: 16px; color: var(--text-muted);"></i>
+                  <input type="text" id="pos-search" class="input-control" placeholder="Search by name, brand, description, displaying SKU..." style="width: 100%; padding-left: 36px;" oninput="triggerPOSSearch()">
+                </div>
+              </div>
+
+              <!-- Categories filtering tabs -->
+              <div class="category-tabs" id="pos-cat-tabs">
+                <!-- Injected Category Buttons dynamically -->
+              </div>
+
+              <!-- Products layout grid -->
+              <div class="product-grid" id="pos-product-grid">
+                <!-- Injected Product cards -->
+              </div>
+            </div>
+
+            <!-- Cart Side -->
+            <div class="glass-card pos-cart">
+              <div style="display: flex; justify-content: space-between; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--border-glass);">
+                <h2>Checkout Lanes</h2>
+                <span class="profit-pill" id="cart-item-count">0 Items</span>
+              </div>
+
+              <!-- Items inside the active cart -->
+              <div class="cart-items-wrapper" id="cart-items-container">
+                <div style="text-align: center; color: var(--text-muted); padding: 40px 10px; font-size: 13px;">
+                  <i data-lucide="shopping-basket" style="width: 32px; height: 32px; margin-bottom: 10px; opacity: 0.5;"></i>
+                  <p>Cart is empty. Select products on the left.</p>
+                </div>
+              </div>
+
+              <!-- Settlement specifications -->
+              <div style="padding-top: 16px; display: flex; flex-direction: column; gap: 12px;">
+                <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                  <span class="text-secondary">Subtotal Amount:</span>
+                  <span style="font-weight: 600; color: #fff;" id="cart-subtotal">0.00 ETB</span>
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="cart-discount" style="font-size: 11px;">Discount Allowance (ETB)</label>
+                  <input type="number" id="cart-discount" class="input-control" style="padding: 6px 10px;" value="0" min="0" oninput="recalcCartTotals()">
+                </div>
+                <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 700; border-top: 1px dashed var(--border-glass-bright); padding-top: 10px;">
+                  <span style="color: #fff;">Invoice Total:</span>
+                  <span style="color: var(--accent-success);" id="cart-total">0.00 ETB</span>
+                </div>
+
+                <form id="checkout-form" style="display: flex; flex-direction: column; gap: 10px;">
+                  <div class="form-group" style="margin-bottom: 0;">
+                    <label>Settlement Mode</label>
+                    <select id="checkout-paytype" class="input-control" style="padding: 8px 10px;" onchange="toggleMobileFields(this.value)">
+                      <option value="cash">Pristine Cash Payment</option>
+                      <option value="mobile_transfer">Electronic Mobile Transfer</option>
+                    </select>
+                  </div>
+
+                  <!-- Mobile fields -->
+                  <div id="checkout-mobile-group" style="display: none; flex-direction: column; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; border: 1px solid var(--border-glass);">
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label for="checkout-txref">Mobile Transaction reference number</label>
+                      <input type="text" id="checkout-txref" class="input-control" placeholder="e.g. FT1928372X" style="padding: 6px 10px;">
+                    </div>
+                    <div class="form-group" style="margin-bottom: 0;">
+                      <label for="checkout-img">Local Storage Reference (Optional Photo)</label>
+                      <input type="file" id="checkout-img" class="input-control" style="padding: 4px; font-size: 11px;" accept="image/*">
+                    </div>
+                  </div>
+
+                  <button type="submit" class="btn btn-success" style="width: 100%; justify-content: center; padding: 12px; font-weight: 600;">
+                    Completed, Log Order <i data-lucide="check"></i>
+                  </button>
+                </form>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- C. INVENTORY STOCK PANEL -->
+        <section id="panel-inventory" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Inventory Stock & Variants</h1>
+              <p class="subtitle">Manage Categories, Products, Custom Variants, Restocking and Adjustments</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button id="btn-new-category" class="btn btn-primary" onclick="openAddCategoryModal()"><i data-lucide="folder-plus"></i> New Category</button>
+              <button id="btn-new-product" class="btn btn-success" onclick="openAddProductModal()"><i data-lucide="plus-circle"></i> New Product</button>
+            </div>
+          </div>
+
+          <div class="table-container glass">
+            <table class="glass-table">
+              <thead>
+                <tr>
+                  <th>Display ID / SKU</th>
+                  <th>Product Details</th>
+                  <th>Category</th>
+                  <th>Base Pricing (ETB)</th>
+                  <th>Available Stock</th>
+                  <th>Status</th>
+                  <th>Operations</th>
+                </tr>
+              </thead>
+              <tbody id="inventory-table-body">
+                <!-- Injected products dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- D. RETURN WORKFLOWS PANEL -->
+        <section id="panel-returns" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Customer Return Workflows</h1>
+              <p class="subtitle">Approve or Reject returned packages attached to original ledger data</p>
+            </div>
+            <button id="btn-new-return" class="btn btn-primary" onclick="openReturnItemPicker()"><i data-lucide="undo-2"></i> File New Return</button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr; gap: 20px;">
+            <div class="glass-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                <h2>Awaiting Approvals</h2>
+                <i data-lucide="clock" style="color: var(--accent-warning);"></i>
+              </div>
+              <div class="table-container">
+                <table class="glass-table">
+                  <thead>
+                    <tr>
+                      <th>Return ID</th>
+                      <th>Sale / Item Code</th>
+                      <th>Requester</th>
+                      <th>Refund Value</th>
+                      <th>Audit Reason</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="returns-table-body">
+                    <!-- Injected return requests dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- E. MANAGE EMPLOYEES PANEL -->
+        <section id="panel-employees" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Employees & Permissions</h1>
+              <p class="subtitle">Set strict, individualized page/action access checklists</p>
+            </div>
+            <button class="btn btn-primary" onclick="openAddEmployeeModal()"><i data-lucide="user-plus"></i> New Employee</button>
+          </div>
+
+          <div class="table-container glass">
+            <table class="glass-table">
+              <thead>
+                <tr>
+                  <th>Full Name</th>
+                  <th>Username</th>
+                  <th>Status</th>
+                  <th>Active Permissions</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="employees-table-body">
+                <!-- Injected employees dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- F. REPORTS PANEL -->
+        <section id="panel-reports" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Financial Reports & Diagnostics</h1>
+              <p class="subtitle">Aggregate sales metrics, revenue curves, and performance lists</p>
+            </div>
+          </div>
+
+          <div class="glass-card" style="margin-bottom: 24px;">
+            <form id="report-form" class="report-parameters-bar">
+              <div class="form-group" style="margin-bottom: 0;">
+                <label>Metric Selection</label>
+                <select id="report-type" class="input-control" onchange="toggleDateInputs(this.value)">
+                  <option value="daily_sales">Daily Sales (Today's Logs)</option>
+                  <option value="weekly_revenue">Weekly Revenue Summary</option>
+                  <option value="monthly_revenue">Monthly Revenue Summary</option>
+                  <option value="top_selling">Top Selling Products List</option>
+                  <option value="low_stock">Critical Low Stock Report</option>
+                  <option value="custom_range">Custom Date Range Revenue</option>
+                </select>
+              </div>
+
+              <div id="report-date-inputs" style="display: none; align-items: center; gap: 10px;">
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="report-start">Start Date</label>
+                  <input type="date" id="report-start" class="input-control" style="padding: 7px 10px;">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                  <label for="report-end">End Date</label>
+                  <input type="date" id="report-end" class="input-control" style="padding: 7px 10px;">
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="padding: 10px 18px;"><i data-lucide="filter"></i> Generate Diagnostic</button>
+            </form>
+          </div>
+
+          <!-- KPI Summary report box -->
+          <div class="bento-grid" id="report-summary-kpis" style="display: none;">
+            <div class="kpi-card glass" style="background: rgba(255, 255, 255, 0.01);">
+              <div class="kpi-title">Selected Revenue</div>
+              <div class="kpi-value" id="rep-kpi-revenue">0.00 ETB</div>
+              <div class="kpi-desc">Total checkout sum</div>
+            </div>
+            <div class="kpi-card glass" style="background: rgba(255, 255, 255, 0.01);">
+              <div class="kpi-title">Cost Basis</div>
+              <div class="kpi-value" id="rep-kpi-cost">0.00 ETB</div>
+              <div class="kpi-desc">Calculated total wholesale buy</div>
+            </div>
+            <div class="kpi-card glass" style="background: rgba(255, 255, 255, 0.01); border-left: 2px solid var(--accent-success);">
+              <div class="kpi-title font-bold text-success">Net Profit</div>
+              <div class="kpi-value" style="color: var(--accent-success);" id="rep-kpi-profit">0.00 ETB</div>
+              <div class="kpi-desc">Earned profit margin</div>
+            </div>
+          </div>
+
+          <!-- Detailed ledger -->
+          <div class="glass-card">
+            <h2>Report Output Ledger</h2>
+            <p class="subtitle" style="margin-bottom: 16px;">Records matching selected filter rules</p>
+            <div class="table-container">
+              <table class="glass-table">
+                <thead id="report-table-head">
+                  <!-- Header changes according to type -->
+                </thead>
+                <tbody id="report-table-body">
+                  <tr>
+                    <td colspan="7" style="text-align: center; color: var(--text-muted); padding: 40px 10px;">Select parameters of the business and press Generate</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- G. AUDIT PANEL -->
+        <section id="panel-audit" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Security Audit Trails</h1>
+              <p class="subtitle">Complete localized timeline of structural inventory operations, checkouts and settings changes</p>
+            </div>
+            <button class="btn" onclick="fetchAuditTrails()"><i data-lucide="refresh-cw"></i> Refresh Trails</button>
+          </div>
+
+          <div class="table-container glass">
+            <table class="glass-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Action Log</th>
+                  <th>System Area</th>
+                  <th>Actor Log</th>
+                  <th>Audit Statement</th>
+                </tr>
+              </thead>
+              <tbody id="audit-table-body">
+                <!-- Injected logs dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- H. BACKUPS PANEL -->
+        <section id="panel-backups" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Secure Backups</h1>
+              <p class="subtitle">Local database copies, automated missed-recovery backups, and retention triggers</p>
+            </div>
+            <button class="btn btn-primary" onclick="createManualBackup()"><i data-lucide="hard-drive"></i> Backup database now</button>
+          </div>
+
+          <div id="retention-prompt-box" class="glass-card" style="display: none; border-left: 4px solid var(--accent-warning); margin-bottom: 24px;">
+            <div style="display: flex; align-items: flex-start; gap: 16px;">
+              <i data-lucide="alert-triangle" style="color: var(--accent-warning); width: 24px; height: 24px; flex-shrink: 0; margin-top: 2px;"></i>
+              <div>
+                <h2>Retention Alert: Files > 30 Days Exist</h2>
+                <p class="subtitle" style="margin-top: 4px;">Choose whether to delete these expired backups to save space, or archive them with formal serialized day-month-year label stamps.</p>
+                <div style="display: flex; gap: 12px; margin-top: 14px;">
+                  <button class="btn btn-success" onclick="handleBackupRetention('keep')">Archive old files</button>
+                  <button class="btn btn-danger" onclick="handleBackupRetention('delete')">Delete empty cycles</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="table-container glass">
+            <table class="glass-table">
+              <thead>
+                <tr>
+                  <th>Creation Date</th>
+                  <th>File Label</th>
+                  <th>Local Path</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                </tr>
+              </thead>
+              <tbody id="backups-table-body">
+                <!-- Injected backups dynamically -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- I. CONFIGURATIONS PANEL -->
+        <section id="panel-settings" class="view-panel">
+          <div class="view-header">
+            <div>
+              <h1>Configurations</h1>
+              <p class="subtitle">Personalize your storefront profile credentials and sliding timeout window parameters</p>
+            </div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <!-- Profile settings -->
+            <div class="glass-card">
+              <h2>My Profile credentials</h2>
+              <p class="subtitle" style="margin-bottom: 20px;">Change details of your active login account</p>
+              
+              <div id="profile-success" style="display: none; color: var(--accent-success); font-size: 13px; margin-bottom: 12px;">Profile credentials updated!</div>
+              <div id="profile-error" style="display: none; color: var(--accent-danger); font-size: 13px; margin-bottom: 12px;"></div>
+
+              <form id="profile-form">
+                <div class="form-group">
+                  <label for="prof-fullname">Full Name</label>
+                  <input type="text" id="prof-fullname" class="input-control" required>
+                </div>
+                <div class="form-group">
+                  <label for="prof-username">Username</label>
+                  <input type="text" id="prof-username" class="input-control" required autocomplete="username">
+                </div>
+                <div class="form-group">
+                  <label for="prof-password">Change Password (leave empty to keep current)</label>
+                  <input type="password" id="prof-password" class="input-control" placeholder="••••••••" autocomplete="new-password">
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Save Profile Updates</button>
+              </form>
+            </div>
+
+            <!-- General shop settings -->
+            <div class="glass-card" id="shop-settings-card" style="display: none;">
+              <h2>General Shop Configs</h2>
+              <p class="subtitle" style="margin-bottom: 20px;">System parameters and business tags (Owner only)</p>
+
+              <div id="settings-success" style="display: none; color: var(--accent-success); font-size: 13px; margin-bottom: 12px;">Business settings updated successfully!</div>
+
+              <form id="shop-settings-form">
+                <div class="form-group">
+                  <label for="set-shopname">Business Storefront name</label>
+                  <input type="text" id="set-shopname" class="input-control" required>
+                </div>
+                <div class="form-group">
+                  <label for="set-timeout">Inactivity timeout limits (Minutes before auto logout)</label>
+                  <input type="number" id="set-timeout" class="input-control" min="2" max="180" required>
+                </div>
+                <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Apply Shop Settings</button>
+              </form>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+
+  <!-- 3. MODAL DIRECTORIES -->
+
+  <!-- A. Category modal -->
+  <div id="modal-category" class="modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 class="modal-title">Create Storefront Category</h2>
+        <button class="modal-close" onclick="closeModal('modal-category')">&times;</button>
+      </div>
+      <div id="cat-modal-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+      <form id="cat-modal-form">
+        <div class="form-group">
+          <label for="cat-name">Category name (Unique)</label>
+          <input type="text" id="cat-name" class="input-control" placeholder="e.g. Pharmacy, Supermarket Drinks, Clothing" required>
+        </div>
+        <div class="form-group">
+          <label for="cat-desc">Summary Details</label>
+          <textarea id="cat-desc" class="input-control" rows="3" placeholder="Description of items..."></textarea>
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+          <button type="button" class="btn" onclick="closeModal('modal-category')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Category</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- B. Product Creation modal -->
+  <div id="modal-product" class="modal">
+    <div class="modal-content glass" style="max-width: 650px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2 class="modal-title">Register Product Details</h2>
+        <button class="modal-close" onclick="closeModal('modal-product')">&times;</button>
+      </div>
+      <div id="prod-modal-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+      
+      <form id="prod-modal-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="prod-category">Product category *</label>
+            <select id="prod-category" class="input-control" required>
+              <!-- Loaded dynamically -->
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="prod-brand">Brand</label>
+            <input type="text" id="prod-brand" class="input-control" placeholder="e.g. Nike, Pfizer, Coca-Cola">
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label for="prod-name">Product name *</label>
+            <input type="text" id="prod-name" class="input-control" placeholder="e.g. Paracetamol Tablet, Air Max Sneakers" required>
+          </div>
+          <div class="form-group">
+            <label for="prod-type">Product type</label>
+            <input type="text" id="prod-type" class="input-control" placeholder="e.g. Capsule, Drink, Canvas Shoes">
+          </div>
+          <div class="form-group">
+            <label for="prod-unit">Unit type</label>
+            <input type="text" id="prod-unit" class="input-control" placeholder="e.g. pcs, box, bottle, pack" value="pcs">
+          </div>
+          <div class="form-group">
+            <label for="prod-threshold">Low stock alert threshold</label>
+            <input type="number" id="prod-threshold" class="input-control" min="0" value="5">
+          </div>
+          <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin-top: 24px;">
+            <input type="checkbox" id="prod-expiry-required" style="width: 16px; height: 16px;">
+            <label for="prod-expiry-required">Require Expiry Date (Mandatory for pharmacy items)</label>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label for="prod-desc">Description (Keywords are searchable in POS)</label>
+          <textarea id="prod-desc" class="input-control" rows="2" placeholder="Describe size, colors, or technical keywords..."></textarea>
+        </div>
+
+        <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 12px 0;">
+          <input type="checkbox" id="prod-has-variants" style="width: 16px; height: 16px;" onchange="toggleVariantSection(this.checked)">
+          <label for="prod-has-variants">This product supports variants (Size / color patterns)</label>
+        </div>
+
+        <!-- Block simple prices if simple product -->
+        <div id="simple-pricing-section" style="display: flex; gap: 16px; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 6px; border: 1px solid var(--border-glass-bright);">
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="prod-buy">Buy price (ETB)</label>
+            <input type="number" step="0.01" id="prod-buy" class="input-control" placeholder="100.00" value="0" oninput="calculateSellPrice()">
+          </div>
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="prod-profit">Profit margin</label>
+            <select id="prod-profit" class="input-control" onchange="calculateSellPrice()">
+              <option value="5">5% margin</option>
+              <option value="10" selected>10% margin</option>
+              <option value="15">15% margin</option>
+              <option value="20">20% margin</option>
+              <option value="25">25% margin</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="prod-sell">Sell price (ETB)</label>
+            <input type="number" step="0.01" id="prod-sell" class="input-control" style="background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.2); font-weight:600; color:var(--accent-success);" readonly>
+          </div>
+        </div>
+
+        <!-- Block Variants definitions -->
+        <div id="variants-section" style="display: none; background: rgba(255,255,255,0.01); padding: 14px; border: 1px dashed var(--border-glass); border-radius: 8px; margin-top: 10px;">
+          <h3 style="font-size: 12px; margin-bottom: 10px; color: var(--accent-color);">Variant Custom Builder</h3>
+          <p class="subtitle" style="margin-bottom: 12px;">Add rows detailing product variants (e.g. shoes size/colors, apparel sizes) and their margins</p>
+          
+          <div id="variants-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
+            <!-- Injected custom rows -->
+          </div>
+          
+          <button type="button" class="btn" style="padding: 6px 10px; font-size:11px;" onclick="addVariantRow()"><i data-lucide="plus"></i> Add Variant Row</button>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
+          <button type="button" class="btn" onclick="closeModal('modal-product')">Cancel</button>
+          <button type="submit" class="btn btn-success">Save Product</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- C. Restock bulk batch modal -->
+  <div id="modal-restock" class="modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 class="modal-title">Bulk Restock Products</h2>
+        <button class="modal-close" onclick="closeModal('modal-restock')">&times;</button>
+      </div>
+      <div id="restock-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+
+      <form id="restock-form">
+        <input type="hidden" id="restock-pid">
+        
+        <div class="form-group">
+          <label>Product details</label>
+          <input type="text" id="restock-pname" class="input-control" style="background: rgba(0,0,0,0.3);" readonly>
+        </div>
+
+        <!-- Variant select (toggled dynamic if variants exist) -->
+        <div class="form-group" id="restock-variant-group" style="display: none;">
+          <label for="restock-vid">Select product variant to stock</label>
+          <select id="restock-vid" class="input-control">
+            <!-- Loaded dynamically if exists -->
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="restock-qty">Quantity to ADD *</label>
+            <input type="number" id="restock-qty" class="input-control" placeholder="e.g. 50" min="1" required>
+          </div>
+          <div class="form-group">
+            <label for="restock-buy">Buy price per item (ETB)</label>
+            <input type="number" step="0.01" id="restock-buy" class="input-control" placeholder="e.g. 120.00" required>
+          </div>
+          <div class="form-group" style="grid-column: span 2;" id="restock-expiry-group">
+            <label for="restock-expiry">Expiry date (Mandatory if Pharmacy or required)</label>
+            <input type="date" id="restock-expiry" class="input-control">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="restock-reason">Stock-in reason label</label>
+          <input type="text" id="restock-reason" class="input-control" value="Store restock" placeholder="e.g. Regular bulk batch, adjustment">
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+          <button type="button" class="btn" onclick="closeModal('modal-restock')">Cancel</button>
+          <button type="submit" class="btn btn-success">Save stock in</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- D. Inventory stock manual adjustment writeoff modal -->
+  <div id="modal-adjustment" class="modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 class="modal-title">Inventory Adjustment & Loss Write-off</h2>
+        <button class="modal-close" onclick="closeModal('modal-adjustment')">&times;</button>
+      </div>
+      <div id="adj-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+
+      <form id="adjustment-form">
+        <input type="hidden" id="adj-pid">
+        
+        <div class="form-group">
+          <label>Adjust item</label>
+          <input type="text" id="adj-pname" class="input-control" style="background: rgba(0,0,0,0.3);" readonly>
+        </div>
+
+        <div class="form-group" id="adj-variant-group" style="display: none;">
+          <label for="adj-vid">Select Variant affected</label>
+          <select id="adj-vid" class="input-control">
+            <!-- Loaded dynamically if exists -->
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="adj-type">Adjustment type *</label>
+            <select id="adj-type" class="input-control" required>
+              <option value="damage">Damaged product write-off</option>
+              <option value="expiry">Expired goods disposal</option>
+              <option value="loss">Loss/Theft record</option>
+              <option value="correction">Inventory recount adjustment</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="adj-qty">Quantity Change (Use NEGATIVE for reductions) *</label>
+            <input type="number" id="adj-qty" class="input-control" placeholder="e.g. -5" required>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="adj-reason">Reason/Statement *</label>
+          <textarea id="adj-reason" class="input-control" rows="2" placeholder="Audit reasoning e.g. Pack cracked, water damage" required></textarea>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+          <button type="button" class="btn" onclick="closeModal('modal-adjustment')">Cancel</button>
+          <button type="submit" class="btn btn-danger">Apply Write-off</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- E. Product Edit modal -->
+  <div id="modal-edit-product" class="modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 class="modal-title">Edit Product Details</h2>
+        <button class="modal-close" onclick="closeModal('modal-edit-product')">&times;</button>
+      </div>
+      <div id="edit-prod-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+
+      <form id="edit-product-form">
+        <input type="hidden" id="edit-prod-id">
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+          <div class="form-group">
+            <label for="edit-prod-category">Product category *</label>
+            <select id="edit-prod-category" class="input-control" required></select>
+          </div>
+          <div class="form-group">
+            <label for="edit-prod-brand">Brand Name</label>
+            <input type="text" id="edit-prod-brand" class="input-control">
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label for="edit-prod-name">Product designator *</label>
+            <input type="text" id="edit-prod-name" class="input-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-prod-type">Product type</label>
+            <input type="text" id="edit-prod-type" class="input-control">
+          </div>
+          <div class="form-group">
+            <label for="edit-prod-unit">Unit identifier</label>
+            <input type="text" id="edit-prod-unit" class="input-control" required>
+          </div>
+          <div class="form-group">
+            <label for="edit-prod-threshold">Low stock threshold alert</label>
+            <input type="number" id="edit-prod-threshold" class="input-control" required>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 8px;">
+          <label for="edit-prod-desc">Description details</label>
+          <textarea id="edit-prod-desc" class="input-control" rows="2"></textarea>
+        </div>
+
+        <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 8px 0;">
+          <input type="checkbox" id="edit-prod-expiry-required" style="width: 16px; height: 16px;">
+          <label for="edit-prod-expiry-required">Expiry Date required (Pharmacy enforcement)</label>
+        </div>
+
+        <!-- Simple product pricing updates (Requires Price permission) -->
+        <div id="edit-simple-pricing-section" style="display: flex; gap: 12px; background: rgba(0,0,0,0.15); padding: 10px; border-radius: 6px; margin: 8px 0;">
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="edit-prod-buy">Buy price (ETB)</label>
+            <input type="number" step="0.01" id="edit-prod-buy" class="input-control" oninput="calculateEditSellPrice()">
+          </div>
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="edit-prod-profit">Profit %</label>
+            <select id="edit-prod-profit" class="input-control" onchange="calculateEditSellPrice()">
+              <option value="5">5% margin</option>
+              <option value="10">10% margin</option>
+              <option value="15">15% margin</option>
+              <option value="20">20% margin</option>
+              <option value="25">25% margin</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1; margin-bottom: 0;">
+            <label for="edit-prod-sell">Sell price (ETB)</label>
+            <input type="number" step="0.01" id="edit-prod-sell" class="input-control" readonly>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 14px;">
+          <button type="button" class="btn" onclick="closeModal('modal-edit-product')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- F. Return request creation modal -->
+  <div id="modal-request-return" class="modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 class="modal-title">Create Return Request</h2>
+        <button class="modal-close" onclick="closeModal('modal-request-return')">&times;</button>
+      </div>
+      <div id="ret-request-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+
+      <form id="return-request-form">
+        <input type="hidden" id="ret-sale-id">
+        <input type="hidden" id="ret-sale-item-id">
+        
+        <div class="form-group">
+          <label>Original checkout reference</label>
+          <input type="text" id="ret-sale-number" class="input-control" style="background: rgba(0,0,0,0.3);" readonly>
+        </div>
+        
+        <div class="form-group">
+          <label>Return Product Description</label>
+          <input type="text" id="ret-item-details" class="input-control" style="background: rgba(0,0,0,0.3);" readonly>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="ret-amount">Refund Value (ETB) *</label>
+            <input type="number" step="0.01" id="ret-amount" class="input-control" required>
+          </div>
+          <div class="form-group">
+            <label for="ret-method">Refund Method *</label>
+            <select id="ret-method" class="input-control" required onchange="toggleReturnMobileFields(this.value)">
+              <option value="cash">Pristine Cash Out</option>
+              <option value="mobile_transfer">Electronic Mobile Transfer</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Return Mobile fields -->
+        <div id="return-mobile-group" style="display: none; flex-direction: column; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius:6px; border:1px solid var(--border-glass); margin-bottom: 10px;">
+          <div class="form-group" style="margin-bottom:0;">
+            <label for="ret-txref">Mobile Out Transfer Ref</label>
+            <input type="text" id="ret-txref" class="input-control" placeholder="e.g. EB1234567" style="padding:6px 10px;">
+          </div>
+          <div class="form-group" style="margin-bottom:0;">
+            <label for="ret-img">Store Reference Receipt Image (Optional)</label>
+            <input type="file" id="ret-img" class="input-control" style="padding:4px; font-size:11px;" accept="image/*">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="ret-reason">Mandatory Audit Reason for request *</label>
+          <textarea id="ret-reason" class="input-control" rows="3" placeholder="Explain why the customer is returning this item..." required></textarea>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+          <button type="button" class="btn" onclick="closeModal('modal-request-return')">Cancel</button>
+          <button type="submit" class="btn btn-danger">File Request</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- G. Add employee modal -->
+  <div id="modal-employee" class="modal">
+    <div class="modal-content glass" style="max-width: 600px; max-height: 90vh; overflow-y: auto;">
+      <div class="modal-header">
+        <h2 class="modal-title">Create Employee Account</h2>
+        <button class="modal-close" onclick="closeModal('modal-employee')">&times;</button>
+      </div>
+      <div id="emp-modal-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+
+      <form id="emp-modal-form">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
+          <div class="form-group">
+            <label for="emp-fullname">Employee Full Name *</label>
+            <input type="text" id="emp-fullname" class="input-control" placeholder="e.g. Abel Kebede" required>
+          </div>
+          <div class="form-group">
+            <label for="emp-username">Username *</label>
+            <input type="text" id="emp-username" class="input-control" placeholder="e.g. abel" required autocomplete="username">
+          </div>
+          <div class="form-group" style="grid-column: span 2;">
+            <label for="emp-password">Temporary Password *</label>
+            <input type="password" id="emp-password" class="input-control" placeholder="••••••••" required autocomplete="new-password">
+          </div>
+        </div>
+
+        <!-- Permissions selector checklists grid -->
+        <div style="margin-top: 16px;">
+          <h3>Assign Account Permission Flags</h3>
+          <p class="subtitle" style="margin-bottom: 10px;">Select which views and modifications the employee is permitted to perform</p>
+          
+          <div class="permission-grid">
+            <div class="permission-card">
+              <input type="checkbox" id="perm-dashboard">
+              <label for="perm-dashboard">View Dashboard Metrics</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-pos" checked>
+              <label for="perm-pos">Lane POS checkout (Sell)</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-products">
+              <label for="perm-products">Configure Products</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-categories">
+              <label for="perm-categories">Configure Categories</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-stock">
+              <label for="perm-stock">Add New Stock Batches</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-ret-create" checked>
+              <label for="perm-ret-create">Request Return receipts</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-ret-approve">
+              <label for="perm-ret-approve">Approve Return requests</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-reports">
+              <label for="perm-reports">View Financial Reports</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-employees">
+              <label for="perm-employees">Manage Employee Accounts</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-audit">
+              <label for="perm-audit">View Security Audit Trails</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-backups">
+              <label for="perm-backups">Configure Backups</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-edit-price">
+              <label for="perm-edit-price">Alter sell/profit margins</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-adjust">
+              <label for="perm-adjust">Write-off Stocks (Adjust)</label>
+            </div>
+            <div class="permission-card">
+              <input type="checkbox" id="perm-settings">
+              <label for="perm-settings">Alter Shop Settings</label>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px;">
+          <button type="button" class="btn" onclick="closeModal('modal-employee')">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- H. Reset Employee Password Modal -->
+  <div id="modal-emp-reset" class="modal">
+    <div class="modal-content glass">
+      <div class="modal-header">
+        <h2 class="modal-title">Reset Employee Password</h2>
+        <button class="modal-close" onclick="closeModal('modal-emp-reset')">&times;</button>
+      </div>
+      <div id="emp-reset-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
+
+      <form id="emp-reset-form">
+        <input type="hidden" id="reset-emp-id">
+        <div class="form-group">
+          <label>Employee Username</label>
+          <input type="text" id="reset-emp-username" class="input-control" style="background: rgba(0,0,0,0.3);" readonly>
+        </div>
+        <div class="form-group">
+          <label for="reset-emp-password">New Password *</label>
+          <input type="password" id="reset-emp-password" class="input-control" required placeholder="••••••••" autocomplete="new-password">
+        </div>
+        <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+          <button type="button" class="btn" onclick="closeModal('modal-emp-reset')">Cancel</button>
+          <button type="submit" class="btn btn-danger">Reset Password</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- I. POS Variant Selection Modal -->
+  <div id="modal-variant-select" class="modal">
+    <div class="modal-content glass" style="max-width: 450px;">
+      <div class="modal-header">
+        <h2 class="modal-title" id="vsel-title">Select Product Variant</h2>
+        <button class="modal-close" onclick="closeModal('modal-variant-select')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="vsel-dropdown">Choose Variant Size / Flavor / Design</label>
+        <select id="vsel-dropdown" class="input-control" style="width:100%;">
+          <!-- Populated dynamically -->
+        </select>
+      </div>
+      <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 16px;">
+        <button class="btn" onclick="closeModal('modal-variant-select')">Cancel</button>
+        <button class="btn btn-primary" onclick="confirmVariantSelection()">Add to checkout</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- J. Return Sale Picker Modal (POS Sale finder list detail helper) -->
+  <div id="modal-sale-item-picker" class="modal">
+    <div class="modal-content glass" style="max-width: 600px; max-height:85vh; overflow-y:auto;">
+      <div class="modal-header">
+        <h2 class="modal-title">&times; File return of transaction items</h2>
+        <button class="modal-close" onclick="closeModal('modal-sale-item-picker')">&times;</button>
+      </div>
+      <div class="form-group">
+        <label for="sp-search">Filter checkouts by Sale ID or invoice number</label>
+        <input type="text" id="sp-search" class="input-control" placeholder="Search SALE-..." oninput="filterSalePicker(this.value)">
+      </div>
+      
+      <div class="table-container" style="max-height: 50vh; overflow-y:auto; margin-top:10px;">
+        <table class="glass-table">
+          <thead>
+            <tr>
+              <th>Invoice Ref</th>
+              <th>DateTime</th>
+              <th>Items/Amounts</th>
+              <th>Option</th>
+            </tr>
+          </thead>
+          <tbody id="sp-sales-items-body">
+            <!-- Loaded dynamically from reports ledger/backend checkouts -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. URGENT BOTTOM-RIGHT ALERTS AND GLOBAL SCRIPTS -->
+  <div id="alerts-container" class="alerts-container"></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
