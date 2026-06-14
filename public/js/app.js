@@ -256,6 +256,174 @@ let cart = [];
 let selectedProductForVariant = null; // helper state for variant modal
 let acknowledgedAlerts = new Set(); // store dismissed alert displaySku IDs
 
+// Inactivity and local sliding idle detection globals
+let lastActiveTime = Date.now();
+let lastHeartbeatTime = 0;
+let userActivityTimeoutMinutes = 15; // default synced from settings
+let idleCheckInterval = null;
+
+// Password verification policy on client
+function validatePasswordStrength(password) {
+  if (password.length < 8) {
+    return 'Password must be at least 8 characters long.';
+  }
+  if (!/[a-z]/.test(password)) {
+    return 'Password must contain at least one lowercase letter.';
+  }
+  if (!/[A-Z]/.test(password)) {
+    return 'Password must contain at least one uppercase letter.';
+  }
+  if (!/[0-9]/.test(password) && !/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+    return 'Password must contain at least one number or symbol.';
+  }
+  return null;
+}
+
+// Setup global fetch interceptor to catch expired sessions and forced lockouts
+const originalFetch = window.fetch;
+window.fetch = function(...args) {
+  // Check if args[1] options are supplied
+  if (args[1] === undefined) {
+    args[1] = {};
+  }
+  if (args[1].headers === undefined) {
+    args[1].headers = {};
+  }
+  
+  // Attach x-active-user header if user has been active recently (within last 10 seconds) AND is logged in
+  const now = Date.now();
+  const isActiveRecently = currentUser && (now - lastActiveTime < 10000);
+  if (isActiveRecently) {
+    if (args[1].headers instanceof Headers) {
+      args[1].headers.set('x-active-user', 'true');
+    } else {
+      args[1].headers['x-active-user'] = 'true';
+    }
+  }
+
+  return originalFetch(...args).then(res => {
+    if (res.status === 401) {
+      currentUser = null;
+      currentPermissions = {};
+      teardownInactivityListeners();
+      showLoginLayout();
+      dismissSessionWarningToast();
+      const url = args[0];
+      if (typeof url === 'string' && !url.includes('/api/auth/session') && !url.includes('/api/auth/login')) {
+        showToast('Your session has expired. Please log in again.', 'error');
+      }
+    } else if (res.status === 403) {
+      return res.clone().json().then(data => {
+        if (data.error === 'FORCED_PASSWORD_RESET' || data.code === 'PASSWORD_RESET_REQUIRED') {
+          showForcedPasswordResetLayout();
+        } else {
+          showToast(data.error || 'Permission Denied', 'error');
+          // Instantly refresh session/permissions to invalidate stale views
+          checkSession();
+        }
+        return res;
+      }).catch(() => res);
+    }
+    return res;
+  });
+};
+
+function resetInactivityTimer() {
+  if (!currentUser) return;
+  
+  const now = Date.now();
+  lastActiveTime = now;
+  dismissSessionWarningToast();
+
+  // Throttled heartbeat to server: active-interaction ping at most once every 30 seconds
+  if (now - lastHeartbeatTime > 30000) {
+    lastHeartbeatTime = now;
+    originalFetch('/api/auth/active-interaction', {
+      headers: { 'x-active-user': 'true' }
+    }).catch(() => {});
+  }
+}
+
+function showSessionWarningToast(secondsLeft) {
+  let existingWarning = document.querySelector('.toast-session-warning');
+  const warningMsg = `Your session will expire in ${secondsLeft}s. Move mouse or press any key to stay logged in.`;
+  
+  if (existingWarning) {
+    let content = existingWarning.querySelector('.toast-content');
+    if (content) content.innerText = warningMsg;
+  } else {
+    const container = document.getElementById('toast-container');
+    if (container) {
+      const toast = document.createElement('div');
+      toast.className = 'toast-item toast-warning toast-session-warning';
+      toast.innerHTML = `
+        <div class="toast-icon">
+          <i data-lucide="alert-circle" style="color: #f59e0b; width: 18px; height: 18px;"></i>
+        </div>
+        <div class="toast-content" style="color: #fff; font-size: 13px; font-weight: 500;">${warningMsg}</div>
+      `;
+      container.appendChild(toast);
+      if (window.lucide) window.lucide.createIcons();
+    }
+  }
+}
+
+function dismissSessionWarningToast() {
+  const existingWarning = document.querySelector('.toast-session-warning');
+  if (existingWarning) {
+    existingWarning.remove();
+  }
+}
+
+function setupInactivityListeners() {
+  lastActiveTime = Date.now();
+  lastHeartbeatTime = Date.now();
+  dismissSessionWarningToast();
+
+  const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
+  events.forEach(evt => {
+    window.addEventListener(evt, resetInactivityTimer, { passive: true });
+  });
+
+  if (idleCheckInterval) {
+    clearInterval(idleCheckInterval);
+  }
+
+  // Ticks every second to monitor idle duration and display warnings
+  idleCheckInterval = setInterval(() => {
+    if (!currentUser) return;
+
+    const remainingMs = (userActivityTimeoutMinutes * 60 * 1000) - (Date.now() - lastActiveTime);
+    
+    if (remainingMs <= 0) {
+      // Session has fully expired locally
+      dismissSessionWarningToast();
+      teardownInactivityListeners();
+      showToast('Session has expired due to inactivity.', 'error');
+      performLogout();
+    } else if (remainingMs <= 60000) {
+      // 1 minute or less remaining, show warning countdown feedback
+      const secondsLeft = Math.ceil(remainingMs / 1000);
+      showSessionWarningToast(secondsLeft);
+    } else {
+      // More than 1 minute remaining, keep countdown hidden
+      dismissSessionWarningToast();
+    }
+  }, 1000);
+}
+
+function teardownInactivityListeners() {
+  const events = ['mousemove', 'mousedown', 'keypress', 'scroll', 'touchstart', 'click'];
+  events.forEach(evt => {
+    window.removeEventListener(evt, resetInactivityTimer);
+  });
+  if (idleCheckInterval) {
+    clearInterval(idleCheckInterval);
+    idleCheckInterval = null;
+  }
+  dismissSessionWarningToast();
+}
+
 // -------------------------------------------------------------------------
 // INITIALIZATION ON WINDOW LOAD
 // -------------------------------------------------------------------------
@@ -319,6 +487,9 @@ function checkSession() {
       if (data.authenticated) {
         currentUser = data.user;
         currentPermissions = data.permissions;
+        if (data.sessionTimeoutMinutes) {
+          userActivityTimeoutMinutes = data.sessionTimeoutMinutes;
+        }
         
         if (currentUser.must_change_password === 1) {
           showForcedPasswordResetLayout();
@@ -363,6 +534,9 @@ function handleLogin(e) {
     } else {
       currentUser = data.user;
       currentPermissions = data.permissions;
+      if (data.sessionTimeoutMinutes) {
+        userActivityTimeoutMinutes = data.sessionTimeoutMinutes;
+      }
 
       if (currentUser.must_change_password === 1) {
         showForcedPasswordResetLayout();
@@ -388,6 +562,14 @@ function performLogout() {
     .then(() => {
       currentUser = null;
       currentPermissions = {};
+      teardownInactivityListeners();
+      document.getElementById('forced-password-container').style.display = 'none';
+      showLoginLayout();
+    })
+    .catch(() => {
+      currentUser = null;
+      currentPermissions = {};
+      teardownInactivityListeners();
       document.getElementById('forced-password-container').style.display = 'none';
       showLoginLayout();
     });
@@ -428,10 +610,17 @@ function handleForcedPasswordReset(e) {
     return;
   }
 
-  fetch('/api/profile/update', {
+  const strengthErr = validatePasswordStrength(newPassword);
+  if (strengthErr) {
+    errorDiv.innerText = strengthErr;
+    errorDiv.style.display = 'block';
+    return;
+  }
+
+  fetch('/api/auth/change-forced-password', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password: newPassword })
+    body: JSON.stringify({ password: newPassword, confirmPassword })
   })
   .then(res => res.json())
   .then(data => {
@@ -474,6 +663,10 @@ function showAppLayout() {
 
   // Render navigation buttons according to permission flags
   toggleSidebarLinks();
+
+  // Setup client idle detection and countdown
+  setupInactivityListeners();
+  resetInactivityTimer();
 }
 
 function toggleSidebarLinks() {
@@ -516,6 +709,26 @@ function toggleSidebarLinks() {
 // WORKSPACE NAVIGATION SWITCHER
 // -------------------------------------------------------------------------
 function switchView(viewName) {
+  // Client-side permission guard for views to intercept direct dev tools switches
+  if (currentUser && currentUser.role_type === 'employee') {
+    let allowed = false;
+    if (viewName === 'dashboard' && currentPermissions.can_view_dashboard === 1) allowed = true;
+    else if (viewName === 'pos' && currentPermissions.can_sell === 1) allowed = true;
+    else if (viewName === 'inventory' && (currentPermissions.can_manage_products === 1 || currentPermissions.can_manage_categories === 1)) allowed = true;
+    else if (viewName === 'returns' && (currentPermissions.can_create_returns === 1 || currentPermissions.can_approve_returns === 1)) allowed = true;
+    else if (viewName === 'employees' && currentPermissions.can_manage_employees === 1) allowed = true;
+    else if (viewName === 'reports' && currentPermissions.can_view_reports === 1) allowed = true;
+    else if (viewName === 'audit' && currentPermissions.can_view_audit_logs === 1) allowed = true;
+    else if (viewName === 'backups' && currentPermissions.can_manage_backups === 1) allowed = true;
+    else if (viewName === 'settings') allowed = true; // Profiling/password change is always open
+
+    if (!allowed) {
+      showToast('Access Denied: You do not have permission to view this page.', 'error');
+      routeUserToAllowedView();
+      return;
+    }
+  }
+
   activeView = viewName;
   
   // Highlight sidebar item
@@ -682,7 +895,7 @@ function addPOSItemToCart(productId) {
     });
 
     if (dropdown.children.length === 0) {
-      alert('All variants for this product are currently out of stock.');
+      showToast('All variants for this product are currently out of stock.', 'error');
       return;
     }
 
@@ -711,7 +924,7 @@ function insertCartItem(product, variant) {
 
   if (existing) {
     if (existing.quantity >= productStock) {
-      alert('Cannot add more items. Limit reaching available stock count.');
+      showToast('Cannot add more items. Limit reaching available stock count.', 'error');
       return;
     }
     existing.quantity += 1;
@@ -740,7 +953,7 @@ function updateCartQuantity(cartKey, delta) {
     cart = cart.filter(c => c.cartKey !== cartKey);
   } else {
     if (nextQty > item.max_stock) {
-      alert('Cannot exceed actual item warehouse quantities.');
+      showToast('Cannot exceed actual item warehouse quantities.', 'error');
       return;
     }
     item.quantity = nextQty;
@@ -825,7 +1038,7 @@ function toggleMobileFields(val) {
 function handleCheckout(e) {
   e.preventDefault();
   if (cart.length === 0) {
-    alert('Checkout aborted: Your cart is empty.');
+    showToast('Checkout aborted: Your cart is empty.', 'error');
     return;
   }
 
@@ -858,9 +1071,9 @@ function handleCheckout(e) {
       .then(res => res.json())
       .then(data => {
         if (data.error) {
-          alert(`Checkout failed: ${data.error}`);
+          showToast(`Checkout failed: ${data.error}`, 'error');
         } else {
-          alert(`Checkout authorized! Invoice Number: ${data.sale_number}`);
+          showToast(`Checkout authorized! Invoice Number: ${data.sale_number}`, 'success');
           // Clear POS form
           cart = [];
           document.getElementById('checkout-form').reset();
@@ -871,7 +1084,7 @@ function handleCheckout(e) {
         }
       })
       .catch(err => {
-        alert('Local storage or network interface error during checkout.');
+        showToast('Local storage or network interface error during checkout.', 'error');
       });
     },
     null,
@@ -1017,7 +1230,7 @@ function createCategory(e) {
     } else {
       closeModal('modal-category');
       loadCategories();
-      alert('Storefront Category initialized.');
+      showToast('Storefront Category initialized.', 'success');
     }
   });
 }
@@ -1121,7 +1334,7 @@ function createProduct(e) {
   if (has_variants) {
     const rows = document.querySelectorAll('#variants-list div');
     if (rows.length === 0) {
-      alert('Please add at least one variant configuration row.');
+      showToast('Please add at least one variant configuration row.', 'warning');
       return;
     }
     
@@ -1143,7 +1356,7 @@ function createProduct(e) {
     });
 
     if (hasErr) {
-      alert('Please fill out all assigned variant fields.');
+      showToast('Please fill out all assigned variant fields.', 'warning');
       return;
     }
   } else {
@@ -1168,7 +1381,7 @@ function createProduct(e) {
     } else {
       closeModal('modal-product');
       loadInventory();
-      alert(`Product registered successfully. Displays ID: ${data.product_id_display}`);
+      showToast(`Product registered successfully. Displays ID: ${data.product_id_display}`, 'success');
     }
   });
 }
@@ -1237,7 +1450,7 @@ function saveRestock(e) {
     } else {
       closeModal('modal-restock');
       loadInventory();
-      alert('Stock catalog updated successfully.');
+      showToast('Stock catalog updated successfully.', 'success');
     }
   });
 }
@@ -1287,7 +1500,7 @@ function saveAdjustment(e) {
     } else {
       closeModal('modal-adjustment');
       loadInventory();
-      alert('Loss Adjustment and writeoff logged in audit history.');
+      showToast('Loss Adjustment and writeoff logged in audit history.', 'success');
     }
   });
 }
@@ -1373,7 +1586,7 @@ function saveEditProduct(e) {
     } else {
       closeModal('modal-edit-product');
       loadInventory();
-      alert('Product updates recorded.');
+      showToast('Product updates recorded.', 'success');
     }
   });
 }
@@ -1509,7 +1722,7 @@ function submitReturnRequest(e) {
       closeModal('modal-request-return');
       closeModal('modal-sale-item-picker');
       loadReturns();
-      alert(`Return request RET-${data.returnId} filed. Awaiting Owner approval.`);
+      showToast(`Return request RET-${data.returnId} filed. Awaiting Owner approval.`, 'info');
     }
   });
 }
@@ -1624,6 +1837,13 @@ function createEmployee(e) {
   const username = document.getElementById('emp-username').value;
   const password = document.getElementById('emp-password').value;
 
+  const strengthErr = validatePasswordStrength(password);
+  if (strengthErr) {
+    document.getElementById('emp-modal-error').innerText = strengthErr;
+    document.getElementById('emp-modal-error').style.display = 'block';
+    return;
+  }
+
   const permissions = {
     can_view_dashboard: document.getElementById('perm-dashboard').checked,
     can_manage_products: document.getElementById('perm-products').checked,
@@ -1654,7 +1874,7 @@ function createEmployee(e) {
     } else {
       closeModal('modal-employee');
       loadEmployees();
-      alert('Employee operator credentials registered on disk.');
+      showToast('Employee operator credentials registered on disk.', 'success');
     }
   });
 }
@@ -1672,6 +1892,13 @@ function resetEmployeePassword(e) {
   const id = parseInt(document.getElementById('reset-emp-id').value);
   const new_password = document.getElementById('reset-emp-password').value;
 
+  const strengthErr = validatePasswordStrength(new_password);
+  if (strengthErr) {
+    document.getElementById('emp-reset-error').innerText = strengthErr;
+    document.getElementById('emp-reset-error').style.display = 'block';
+    return;
+  }
+
   fetch(`/api/employees/reset-password/${id}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1684,7 +1911,7 @@ function resetEmployeePassword(e) {
       document.getElementById('emp-reset-error').style.display = 'block';
     } else {
       closeModal('modal-emp-reset');
-      alert('Employee login password overwritten.');
+      showToast('Employee login password overwritten.', 'success');
     }
   });
 }
@@ -1789,7 +2016,7 @@ function toggleEmployeePermission(empId) {
             document.querySelector('#modal-employee .modal-title').innerText = 'Create Employee Account';
             document.getElementById('emp-password').placeholder = '••••••••';
             document.getElementById('emp-password').setAttribute('required', 'true');
-            alert('Permissions updated successfully.');
+            showToast('Permissions updated successfully.', 'success');
           }
         });
       };
@@ -1857,7 +2084,7 @@ function generateReport(e) {
   let url = `/api/reports/query?type=${type}`;
   if (type === 'custom_range') {
     if (!start || !end) {
-      alert('Must select Start and End date bounds for custom diagnostic range.');
+      showToast('Must select Start and End date bounds for custom diagnostic range.', 'warning');
       return;
     }
     url += `&start_date=${start}&end_date=${end}`;
@@ -1868,7 +2095,7 @@ function generateReport(e) {
     .then(data => {
       if (!data || !Array.isArray(data.sales)) {
         console.error('Failed to load report data:', data);
-        alert(data && data.error ? `Report failed: ${data.error}` : 'Failed to retrieve report diagnostic logs.');
+        showToast(data && data.error ? `Report failed: ${data.error}` : 'Failed to retrieve report diagnostic logs.', 'error');
         return;
       }
       const head = document.getElementById('report-table-head');
@@ -2069,10 +2296,10 @@ function createManualBackup() {
   fetch('/api/backups/create', { method: 'POST' })
     .then(res => res.json())
     .then(data => {
-      if (data.error) alert(data.error);
+      if (data.error) showToast(data.error, 'error');
       else {
         loadBackups();
-        alert(`Offline backup complete! Database written to backups/daily/${data.filename}`);
+        showToast(`Offline backup complete! Database written to backups/daily/${data.filename}`, 'success');
       }
     });
 }
@@ -2085,10 +2312,10 @@ function handleBackupRetention(decision) {
   })
   .then(res => res.json())
   .then(data => {
-    if (data.error) alert(data.error);
+    if (data.error) showToast(data.error, 'error');
     else {
       loadBackups();
-      alert(`Backups updated! Handled retention files correctly.`);
+      showToast(`Backups updated! Handled retention files correctly.`, 'success');
     }
   });
 }
@@ -2145,6 +2372,15 @@ function updateMyProfile(e) {
   errDiv.style.display = 'none';
   succDiv.style.display = 'none';
 
+  if (password) {
+    const strengthErr = validatePasswordStrength(password);
+    if (strengthErr) {
+      errDiv.innerText = strengthErr;
+      errDiv.style.display = 'block';
+      return;
+    }
+  }
+
   fetch('/api/profile/update', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -2180,7 +2416,7 @@ function updateShopSettings(e) {
   .then(res => res.json())
   .then(data => {
     if (data.error) {
-      alert(data.error);
+      showToast(data.error, 'error');
     } else {
       succDiv.style.display = 'block';
       loadSettingsData();
