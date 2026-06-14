@@ -1,4 +1,58 @@
 // -------------------------------------------------------------------------
+// TOP-OF-SCREEN GLASSMORPHIC TOAST NOTIFICATIONS
+// -------------------------------------------------------------------------
+function showToast(message, type = 'success', duration = 4000) {
+  let container = document.getElementById('toast-container');
+  if (!container) {
+    container = document.createElement('div');
+    container.id = 'toast-container';
+    container.className = 'toast-container';
+    document.body.appendChild(container);
+  }
+
+  const toast = document.createElement('div');
+  toast.className = `toast-item toast-${type}`;
+  
+  let iconHtml = '';
+  if (type === 'success') {
+    iconHtml = '<i data-lucide="check-circle-2" style="color: #10b981; width: 18px; height: 18px;"></i>';
+  } else if (type === 'error' || type === 'danger') {
+    iconHtml = '<i data-lucide="alert-triangle" style="color: #ef4444; width: 18px; height: 18px;"></i>';
+  } else if (type === 'warning') {
+    iconHtml = '<i data-lucide="alert-circle" style="color: #f59e0b; width: 18px; height: 18px;"></i>';
+  } else {
+    iconHtml = '<i data-lucide="info" style="color: #3b82f6; width: 18px; height: 18px;"></i>';
+  }
+
+  toast.innerHTML = `
+    <div class="toast-icon">${iconHtml}</div>
+    <div class="toast-content">${message}</div>
+    <button class="toast-dismiss" style="background:none; border:none; color:rgba(255,255,255,0.4); font-size:18px; cursor:pointer; line-height:1; padding-left:10px;">&times;</button>
+  `;
+
+  container.appendChild(toast);
+  
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+
+  const dismissToast = () => {
+    toast.style.transform = 'translateY(-20px)';
+    toast.style.opacity = '0';
+    toast.style.transition = 'all 0.25s ease';
+    setTimeout(() => {
+      toast.remove();
+    }, 250);
+  };
+
+  toast.querySelector('.toast-dismiss').onclick = dismissToast;
+
+  if (duration > 0) {
+    setTimeout(dismissToast, duration);
+  }
+}
+
+// -------------------------------------------------------------------------
 // BEAUTIFUL GLASSMORPHISM CUSTOM MODAL ALERT & CONFIRM DIALOGS
 // -------------------------------------------------------------------------
 function showAlert(message, title = "System Notification", type = "info", callback = null) {
@@ -169,11 +223,25 @@ function showConfirm(message, onConfirm, onCancel = null, title = "Confirmation 
   };
 }
 
-// Redirect standard window.alert calls to our custom modal overlay
+// Redirect standard window.alert calls to our custom toast notifications
 window.alert = function(message) {
-  let title = "Notification";
-  let type = "info";
-  showAlert(message, title, type);
+  const lowercase = String(message).toLowerCase();
+  let type = 'info';
+  if (lowercase.includes("failed") || lowercase.includes("error") || lowercase.includes("cannot") || lowercase.includes("limit reaching") || lowercase.includes("out of stock") || lowercase.includes("aborted")) {
+    type = 'error';
+  } else if (lowercase.includes("success") || lowercase.includes("authorized") || lowercase.includes("complete") || lowercase.includes("created") || lowercase.includes("registered") || lowercase.includes("updated") || lowercase.includes("overwritten") || lowercase.includes("deleted")) {
+    type = 'success';
+  } else if (lowercase.includes("warning") || lowercase.includes("danger") || lowercase.includes("alert")) {
+    type = 'warning';
+  }
+  showToast(message, type);
+};
+
+// Deprecate synchronous confirm blocking prompts
+window.confirm = function(message) {
+  console.warn("Synchronous confirm() is deprecated in IMSO. Please use showConfirm().");
+  showToast(message, "warning");
+  return false;
 };
 
 // -------------------------------------------------------------------------
@@ -196,6 +264,7 @@ window.addEventListener('DOMContentLoaded', () => {
   
   // Bind form listeners
   document.getElementById('login-form').addEventListener('submit', handleLogin);
+  document.getElementById('forced-password-form').addEventListener('submit', handleForcedPasswordReset);
   document.getElementById('cat-modal-form').addEventListener('submit', createCategory);
   document.getElementById('prod-modal-form').addEventListener('submit', createProduct);
   document.getElementById('restock-form').addEventListener('submit', saveRestock);
@@ -251,6 +320,11 @@ function checkSession() {
         currentUser = data.user;
         currentPermissions = data.permissions;
         
+        if (currentUser.must_change_password === 1) {
+          showForcedPasswordResetLayout();
+          return;
+        }
+
         showAppLayout();
         // Load initial data
         loadSettingsData();
@@ -289,6 +363,12 @@ function handleLogin(e) {
     } else {
       currentUser = data.user;
       currentPermissions = data.permissions;
+
+      if (currentUser.must_change_password === 1) {
+        showForcedPasswordResetLayout();
+        return;
+      }
+
       showAppLayout();
       loadSettingsData();
       loadCategories();
@@ -308,6 +388,7 @@ function performLogout() {
     .then(() => {
       currentUser = null;
       currentPermissions = {};
+      document.getElementById('forced-password-container').style.display = 'none';
       showLoginLayout();
     });
 }
@@ -318,11 +399,68 @@ function performLogout() {
 function showLoginLayout() {
   document.getElementById('login-container').style.display = 'flex';
   document.getElementById('app-layout').classList.remove('active');
+  document.getElementById('forced-password-container').style.display = 'none';
   document.getElementById('login-form').reset();
+}
+
+function showForcedPasswordResetLayout() {
+  document.getElementById('login-container').style.display = 'none';
+  document.getElementById('app-layout').classList.remove('active');
+  document.getElementById('forced-password-container').style.display = 'flex';
+  document.getElementById('forced-password-form').reset();
+  document.getElementById('forced-password-error').style.display = 'none';
+  if (window.lucide) {
+    window.lucide.createIcons();
+  }
+}
+
+function handleForcedPasswordReset(e) {
+  e.preventDefault();
+  const newPassword = document.getElementById('forced-new-password').value;
+  const confirmPassword = document.getElementById('forced-confirm-password').value;
+  const errorDiv = document.getElementById('forced-password-error');
+
+  errorDiv.style.display = 'none';
+
+  if (newPassword !== confirmPassword) {
+    errorDiv.innerText = 'Passwords do not match.';
+    errorDiv.style.display = 'block';
+    return;
+  }
+
+  fetch('/api/profile/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: newPassword })
+  })
+  .then(res => res.json())
+  .then(data => {
+    if (data.error) {
+      errorDiv.innerText = data.error;
+      errorDiv.style.display = 'block';
+    } else {
+      currentUser.must_change_password = 0;
+      document.getElementById('forced-password-container').style.display = 'none';
+      
+      showToast('Password updated successfully. Access granted!', 'success');
+      
+      showAppLayout();
+      loadSettingsData();
+      loadCategories();
+      checkLowStockAlerts();
+
+      routeUserToAllowedView();
+    }
+  })
+  .catch(err => {
+    errorDiv.innerText = 'Failed to update password. Try again.';
+    errorDiv.style.display = 'block';
+  });
 }
 
 function showAppLayout() {
   document.getElementById('login-container').style.display = 'none';
+  document.getElementById('forced-password-container').style.display = 'none';
   const appLayout = document.getElementById('app-layout');
   appLayout.classList.add('active');
 
@@ -1377,22 +1515,27 @@ function submitReturnRequest(e) {
 }
 
 function approveReturn(retId, decision) {
-  if (!confirm(`Are you sure you want to change status to ${decision}?`)) return;
-
-  fetch(`/api/returns/approve/${retId}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ decision })
-  })
-  .then(res => res.json())
-  .then(data => {
-    if (data.error) {
-      alert(data.error);
-    } else {
-      loadReturns();
-      alert(`Return request updated to: ${decision}`);
-    }
-  });
+  showConfirm(
+    `Are you sure you want to change status to ${decision}?`,
+    () => {
+      fetch(`/api/returns/approve/${retId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          showToast(data.error, 'error');
+        } else {
+          loadReturns();
+          showToast(`Return request updated to: ${decision}`, 'success');
+        }
+      });
+    },
+    null,
+    "Approve Return"
+  );
 }
 
 // -------------------------------------------------------------------------
@@ -1654,17 +1797,23 @@ function toggleEmployeePermission(empId) {
 }
 
 function perfDeleteEmployee(id, username) {
-  if (!confirm(`Are you sure you want to completely delete employee: ${username}?`)) return;
-
-  fetch(`/api/employees/${id}`, { method: 'DELETE' })
-    .then(res => res.json())
-    .then(data => {
-      if (data.error) alert(data.error);
-      else {
-        loadEmployees();
-        alert('Operator employee deleted.');
-      }
-    });
+  showConfirm(
+    `Are you sure you want to completely delete employee: ${username}?`,
+    () => {
+      fetch(`/api/employees/${id}`, { method: 'DELETE' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.error) {
+            showToast(data.error, 'error');
+          } else {
+            loadEmployees();
+            showToast('Operator employee deleted.', 'success');
+          }
+        });
+    },
+    null,
+    "Delete Employee Account"
+  );
 }
 
 // -------------------------------------------------------------------------

@@ -40,6 +40,7 @@ db.exec(`
     password_hash TEXT NOT NULL,
     role_type TEXT NOT NULL, -- 'owner' or 'employee'
     is_active INTEGER DEFAULT 1,
+    must_change_password INTEGER DEFAULT 0,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -243,6 +244,13 @@ db.exec(`
   );
 `);
 
+// Try inserting must_change_password column into users table if not already existing
+try {
+  db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
+} catch (e) {
+  // Column already exists
+}
+
 // -------------------------------------------------------------------------
 // AUDIT LOG HELPER
 // -------------------------------------------------------------------------
@@ -279,8 +287,8 @@ if (count === 0) {
   const timestamp = new Date().toISOString();
 
   const insertUser = db.prepare(`
-    INSERT INTO users (full_name, username, password_hash, role_type, is_active, created_at, updated_at)
-    VALUES (?, ?, ?, ?, 1, ?, ?)
+    INSERT INTO users (full_name, username, password_hash, role_type, is_active, must_change_password, created_at, updated_at)
+    VALUES (?, ?, ?, ?, 1, 1, ?, ?)
   `);
   const result = insertUser.run('Shop Owner', 'owner', passwordHash, 'owner', timestamp, timestamp);
   const userId = result.lastInsertRowid as number;
@@ -654,6 +662,7 @@ app.post('/api/auth/login', (req: Request, res: Response) => {
           username: user.username,
           full_name: user.full_name,
           role_type: user.role_type,
+          must_change_password: user.must_change_password,
           last_login_at: timestamp
         },
         permissions: perms || {}
@@ -681,7 +690,7 @@ app.post('/api/auth/logout', requireAuth, (req: Request, res: Response) => {
 app.get('/api/auth/session', (req: Request, res: Response) => {
   if (req.session && req.session.userId) {
     // Pull fresh permissions and details from database
-    const user = db.prepare('SELECT id, username, full_name, role_type, is_active FROM users WHERE id = ?').get(req.session.userId) as any;
+    const user = db.prepare('SELECT id, username, full_name, role_type, is_active, must_change_password FROM users WHERE id = ?').get(req.session.userId) as any;
     if (!user || user.is_active === 0) {
       req.session.destroy(() => {});
       return res.status(401).json({ authenticated: false });
@@ -699,7 +708,8 @@ app.get('/api/auth/session', (req: Request, res: Response) => {
           id: user.id,
           username: user.username,
           full_name: user.full_name,
-          role_type: user.role_type
+          role_type: user.role_type,
+          must_change_password: user.must_change_password
         },
         permissions: perms || {}
       });
@@ -1580,8 +1590,8 @@ app.post('/api/employees', requireAuth, requirePermission('can_manage_employees'
     const timestamp = new Date().toISOString();
 
     const result = db.prepare(`
-      INSERT INTO users (full_name, username, password_hash, role_type, is_active, created_at, updated_at)
-      VALUES (?, ?, ?, 'employee', 1, ?, ?)
+      INSERT INTO users (full_name, username, password_hash, role_type, is_active, must_change_password, created_at, updated_at)
+      VALUES (?, ?, ?, 'employee', 1, 1, ?, ?)
     `).run(full_name, username, hash, timestamp, timestamp);
 
     const empId = result.lastInsertRowid as number;
@@ -1689,7 +1699,7 @@ app.post('/api/employees/reset-password/:id', requireAuth, requirePermission('ca
     const hash = bcrypt.hashSync(new_password, salt);
     const timestamp = new Date().toISOString();
 
-    db.prepare('UPDATE users SET password_hash = ?, updated_at = ? WHERE id = ?').run(hash, timestamp, empId);
+    db.prepare('UPDATE users SET password_hash = ?, must_change_password = 1, updated_at = ? WHERE id = ?').run(hash, timestamp, empId);
 
     logAudit(req.session.userId!, 'employee reset', 'users', empId, null, null, `Authorized owner password reset for employee: ${emp.username}`);
 
@@ -2022,7 +2032,7 @@ app.post('/api/profile/update', requireAuth, (req: Request, res: Response) => {
     if (password) {
       const salt = bcrypt.genSaltSync(10);
       const hash = bcrypt.hashSync(password, salt);
-      updateQuery += ', password_hash = ?';
+      updateQuery += ', password_hash = ?, must_change_password = 0';
       params.push(hash);
     }
 
