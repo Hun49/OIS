@@ -33,18 +33,22 @@ app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 // Register API router
 app.use('/api', apiRouter);
 
-// Run startup missed backup recovery check
-runStartupBackupRecovery();
+async function startApp() {
+  // Run startup missed backup recovery check
+  await runStartupBackupRecovery();
 
-// Start background backup ticker scheduling
-startBackupScheduler();
+  // Start background backup ticker scheduling
+  startBackupScheduler();
 
-// Single fallback wildcard route to send frontend index.html
-app.get('*', (req: Request, res: Response) => {
-  res.sendFile(path.join(process.cwd(), 'public/index.html'));
-});
+  // Single fallback wildcard route to send frontend index.html
+  app.get('*', (req: Request, res: Response) => {
+    res.sendFile(path.join(process.cwd(), 'public/index.html'));
+  });
 
-// Bind server launch
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`[Server] Live on local port http://localhost:${PORT}`);
-});
+  // Bind server launch
+  app.listen(PORT, '0.0.0.0', () => {
+    console.log(`[Server] Live on local port http://localhost:${PORT}`);
+  });
+}
+
+startApp();

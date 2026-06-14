@@ -71,6 +71,23 @@ export function requestReturn(req: Request, res: Response) {
   }
 
   try {
+    const sale = db.prepare('SELECT * FROM sales WHERE id = ?').get(sale_id) as any;
+    if (!sale) {
+      return res.status(404).json({ error: 'Sale record not found.' });
+    }
+
+    const actorId = req.session.userId!;
+    const actor = db.prepare('SELECT role_type FROM users WHERE id = ?').get(actorId) as any;
+    const permissions = db.prepare('SELECT * FROM user_permissions WHERE user_id = ?').get(actorId) as any;
+
+    const hasViewAccess = actor?.role_type === 'owner' ||
+                          sale.sold_by_user_id === actorId ||
+                          (permissions && permissions.can_view_reports === 1);
+
+    if (!hasViewAccess) {
+      return res.status(403).json({ error: 'Permission Denied: You do not have view access to this sale, so you cannot file a return request for it.' });
+    }
+
     const timestamp = new Date().toISOString();
     const filename = req.file ? req.file.filename : null;
 
@@ -82,7 +99,7 @@ export function requestReturn(req: Request, res: Response) {
       refund_amount,
       transaction_reference,
       filename,
-      userId: req.session.userId!,
+      userId: actorId,
       timestamp
     });
 
@@ -101,7 +118,7 @@ const approveReturnTransaction = db.transaction((data: any) => {
 
   if (decision === 'approved') {
     // 1. Set return as approved
-    db.prepare('UPDATE return_requests SET status = "approved", approved_by_user_id = ?, approved_at = ? WHERE id = ?')
+    db.prepare("UPDATE return_requests SET status = 'approved', approved_by_user_id = ?, approved_at = ? WHERE id = ?")
       .run(userId, timestamp, retId);
 
     // 2. Replenish stock quantities back into the database physical pools
@@ -135,7 +152,7 @@ const approveReturnTransaction = db.transaction((data: any) => {
 
   } else {
     // Set return as rejected
-    db.prepare('UPDATE return_requests SET status = "rejected", approved_by_user_id = ?, approved_at = ? WHERE id = ?')
+    db.prepare("UPDATE return_requests SET status = 'rejected', approved_by_user_id = ?, approved_at = ? WHERE id = ?")
       .run(userId, timestamp, retId);
   }
 

@@ -1081,6 +1081,8 @@ function handleCheckout(e) {
           toggleMobileFields('cash');
           renderCart();
           triggerPOSSearch();
+          loadInventory();
+          fetchDashboardStats();
         }
       })
       .catch(err => {
@@ -1239,10 +1241,11 @@ function openAddProductModal() {
   document.getElementById('prod-modal-error').style.display = 'none';
   document.getElementById('prod-modal-form').reset();
   
-  // Set default buy/profit inputs
+  // Set default buy/profit/initial qty inputs
   document.getElementById('prod-buy').value = '0';
   document.getElementById('prod-profit').value = '10';
   document.getElementById('prod-sell').value = '0.00';
+  document.getElementById('prod-initial-qty').value = '0';
 
   // Clear nested variant builder list
   document.getElementById('variants-list').innerHTML = '';
@@ -1298,6 +1301,7 @@ function addVariantRow() {
       <option value="25">25%</option>
     </select>
     <input type="number" placeholder="Sell Price" class="input-control variant-sell" style="width:100px; padding:6px 10px; background:rgba(0,0,0,0.3); font-weight:600;" readonly>
+    <input type="number" placeholder="Init Qty" class="input-control variant-qty" style="width:80px; padding:6px 10px;" min="0" value="0">
     <button type="button" class="qty-btn" style="background:rgba(239,68,68,0.1); color:#f87171; border-color:transparent;" onclick="this.parentElement.remove()">&times;</button>
   `;
 
@@ -1343,6 +1347,7 @@ function createProduct(e) {
       const vName = r.querySelector('.variant-name').value;
       const vBuy = parseFloat(r.querySelector('.variant-buy').value);
       const vMargin = parseFloat(r.querySelector('.variant-profit').value);
+      const vQty = parseInt(r.querySelector('.variant-qty').value) || 0;
       
       if (!vName || isNaN(vBuy)) {
         hasErr = true;
@@ -1350,7 +1355,8 @@ function createProduct(e) {
         variants.push({
           variant_name: vName,
           buy_price: vBuy,
-          profit_percentage: vMargin
+          profit_percentage: vMargin,
+          initial_quantity: vQty
         });
       }
     });
@@ -1364,13 +1370,15 @@ function createProduct(e) {
     profit_percentage = parseFloat(document.getElementById('prod-profit').value) || 10;
   }
 
+  const initial_quantity = has_variants ? 0 : (parseInt(document.getElementById('prod-initial-qty').value) || 0);
+
   fetch('/api/products', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       category_id, brand, name, product_type, description, unit_type,
       has_variants, expiry_required, low_stock_threshold, buy_price,
-      profit_percentage, variants
+      profit_percentage, variants, initial_quantity
     })
   })
   .then(res => res.json())
@@ -1381,6 +1389,8 @@ function createProduct(e) {
     } else {
       closeModal('modal-product');
       loadInventory();
+      loadPOS();
+      fetchDashboardStats();
       showToast(`Product registered successfully. Displays ID: ${data.product_id_display}`, 'success');
     }
   });
@@ -1450,6 +1460,8 @@ function saveRestock(e) {
     } else {
       closeModal('modal-restock');
       loadInventory();
+      loadPOS();
+      fetchDashboardStats();
       showToast('Stock catalog updated successfully.', 'success');
     }
   });
@@ -1500,6 +1512,8 @@ function saveAdjustment(e) {
     } else {
       closeModal('modal-adjustment');
       loadInventory();
+      loadPOS();
+      fetchDashboardStats();
       showToast('Loss Adjustment and writeoff logged in audit history.', 'success');
     }
   });
@@ -1586,6 +1600,8 @@ function saveEditProduct(e) {
     } else {
       closeModal('modal-edit-product');
       loadInventory();
+      loadPOS();
+      fetchDashboardStats();
       showToast('Product updates recorded.', 'success');
     }
   });
@@ -1742,6 +1758,9 @@ function approveReturn(retId, decision) {
           showToast(data.error, 'error');
         } else {
           loadReturns();
+          loadInventory();
+          loadPOS();
+          fetchDashboardStats();
           showToast(`Return request updated to: ${decision}`, 'success');
         }
       });

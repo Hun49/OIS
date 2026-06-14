@@ -27,10 +27,18 @@ export function getProducts(req: Request, res: Response) {
       ORDER BY products.name ASC
     `).all() as any[];
 
+    // Optimize performance: Fetch all relevant variants in one batch instead of N individual queries
+    const allVariants = db.prepare('SELECT * FROM product_variants').all() as any[];
+    const variantsMap = new Map<number, any[]>();
+    allVariants.forEach(v => {
+      if (!variantsMap.has(v.product_id)) variantsMap.set(v.product_id, []);
+      variantsMap.get(v.product_id)!.push(v);
+    });
+
     // Map variant stocks and expiry alerts onto the items
     for (const p of products) {
       if (p.has_variants) {
-        const variants = db.prepare('SELECT * FROM product_variants WHERE product_id = ?').all(p.id) as any[];
+        const variants = variantsMap.get(p.id) || [];
         p.variants = variants;
         p.stock = variants.reduce((acc, v) => acc + (v.stock_quantity || 0), 0);
       } else {
@@ -53,7 +61,7 @@ const createProductTransaction = db.transaction((data: any) => {
     category_id, brand, name, product_type, description, unit_type,
     has_variants, expiry_required, low_stock_threshold, buy_price,
     profit_percentage, variants, userId, timestamp, sku, displayId,
-    pPct, bPrice, sPrice
+    pPct, bPrice, sPrice, initial_quantity
   } = data;
 
   const insertProduct = db.prepare(`
@@ -85,13 +93,22 @@ const createProductTransaction = db.transaction((data: any) => {
 
   const productId = result.lastInsertRowid as number;
 
+  const initQty = parseInt(initial_quantity) || 0;
+  if (!has_variants && initQty > 0) {
+    const insertBatch = db.prepare(`
+      INSERT INTO stock_batches (product_id, variant_id, quantity_added, buy_price, sell_price, reason, added_by_user_id, created_at)
+      VALUES (?, NULL, ?, ?, ?, ?, ?, ?)
+    `);
+    insertBatch.run(productId, initQty, bPrice, sPrice, 'Initial Stock', userId, timestamp);
+  }
+
   if (has_variants && Array.isArray(variants)) {
     const insertVariant = db.prepare(`
       INSERT INTO product_variants (
         product_id, sku_variant, variant_name, variant_label_1, variant_label_2, variant_label_3,
         description, stock_quantity, buy_price, sell_price, low_stock_threshold, expiry_date,
         is_active, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, 1, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
     `);
 
     variants.forEach((v: any) => {
@@ -102,8 +119,9 @@ const createProductTransaction = db.transaction((data: any) => {
       const vPct = parseFloat(v.profit_percentage) || pPct;
       const vBPrice = parseFloat(v.buy_price) || bPrice;
       const vSPrice = parseFloat((vBPrice * (1 + vPct / 100)).toFixed(2));
+      const vQty = parseInt(v.initial_quantity) || 0;
 
-      insertVariant.run(
+      const vResult = insertVariant.run(
         productId,
         vSku,
         vName,
@@ -111,6 +129,7 @@ const createProductTransaction = db.transaction((data: any) => {
         v.label2 || '',
         v.label3 || '',
         v.description || '',
+        vQty,
         vBPrice,
         vSPrice,
         parseInt(v.low_stock_threshold) || parseInt(low_stock_threshold) || 0,
@@ -118,6 +137,16 @@ const createProductTransaction = db.transaction((data: any) => {
         timestamp,
         timestamp
       );
+
+      const variantId = vResult.lastInsertRowid as number;
+
+      if (vQty > 0) {
+        const insertBatch = db.prepare(`
+          INSERT INTO stock_batches (product_id, variant_id, quantity_added, buy_price, sell_price, reason, added_by_user_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+        insertBatch.run(productId, variantId, vQty, vBPrice, vSPrice, 'Initial Stock', userId, timestamp);
+      }
     });
   }
 
@@ -130,11 +159,16 @@ export function createProduct(req: Request, res: Response) {
   const {
     category_id, brand, name, product_type, description, unit_type,
     has_variants, expiry_required, low_stock_threshold, buy_price,
-    profit_percentage, variants
+    profit_percentage, variants, initial_quantity
   } = req.body;
 
   if (!name || !category_id) {
     return res.status(400).json({ error: 'Product name and category are required.' });
+  }
+
+  const thresholdVal = parseInt(low_stock_threshold);
+  if (low_stock_threshold !== undefined && (isNaN(thresholdVal) || thresholdVal < 0)) {
+    return res.status(400).json({ error: 'Low stock threshold must be a non-negative numeric value.' });
   }
 
   try {
@@ -145,13 +179,15 @@ export function createProduct(req: Request, res: Response) {
 
     const pPct = parseFloat(profit_percentage) || 10;
     const bPrice = parseFloat(buy_price) || 0;
+    if (bPrice < 0) return res.status(400).json({ error: 'Buy price cannot be negative.' });
+    if (pPct < -100) return res.status(400).json({ error: 'Profit percentage cannot be less than -100%.' });
     const sPrice = parseFloat((bPrice * (1 + pPct / 100)).toFixed(2));
 
     const result = createProductTransaction({
       category_id, brand, name, product_type, description, unit_type,
       has_variants, expiry_required, low_stock_threshold, buy_price,
       profit_percentage, variants, userId: req.session.userId!, timestamp,
-      sku, displayId, pPct, bPrice, sPrice
+      sku, displayId, pPct, bPrice, sPrice, initial_quantity
     });
 
     return res.json({ success: true, ...result });
@@ -236,6 +272,11 @@ export function updateProduct(req: Request, res: Response) {
     expiry_required, low_stock_threshold, is_active, buy_price, sell_price, profit_percentage
   } = req.body;
 
+  const thresholdVal = parseInt(low_stock_threshold);
+  if (low_stock_threshold !== undefined && (isNaN(thresholdVal) || thresholdVal < 0)) {
+    return res.status(400).json({ error: 'Low stock threshold must be a non-negative numeric value.' });
+  }
+
   try {
     const timestamp = new Date().toISOString();
     const pricePermission = req.session.role === 'owner' || req.session.permissions?.can_edit_prices === 1;
@@ -311,8 +352,9 @@ const addStockTransaction = db.transaction((data: any) => {
 
 export function addStock(req: Request, res: Response) {
   const { product_id, variant_id, quantity, buy_price, expiry_date, reason } = req.body;
-  if (!product_id || !quantity) {
-    return res.status(400).json({ error: 'Product and quantity are required.' });
+  const qtyNum = parseInt(quantity);
+  if (!product_id || isNaN(qtyNum) || qtyNum <= 0) {
+    return res.status(400).json({ error: 'Product and a valid positive quantity are required.' });
   }
 
   try {

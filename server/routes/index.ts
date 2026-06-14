@@ -61,7 +61,7 @@ router.post('/employees/reset-password/:id', requireAuth, requirePermission('can
 router.delete('/employees/:id', requireAuth, requirePermission('can_manage_employees'), employeesController.deleteEmployee);
 
 // 8. REPORTS GENERATION API
-router.get('/reports/query', requireAuth, requirePermission('can_view_reports'), reportsController.queryReport);
+router.get('/reports/query', requireAuth, reportsController.queryReport);
 
 // 9. AUDIT LOGS SEARCH API
 router.get('/audit-logs', requireAuth, requirePermission('can_view_audit_logs'), auditLogsController.getAuditLogs);
@@ -69,6 +69,7 @@ router.get('/audit-logs', requireAuth, requirePermission('can_view_audit_logs'),
 // 10. BACKUPS API
 router.get('/backups', requireAuth, requirePermission('can_manage_backups'), backupsController.getBackups);
 router.post('/backups/create', requireAuth, requirePermission('can_manage_backups'), backupsController.createBackupRoute);
+router.post('/backups/restore', requireAuth, requirePermission('can_manage_backups'), backupsController.restoreBackup);
 router.post('/backups/retention-decision', requireAuth, requirePermission('can_manage_backups'), backupsController.handleRetentionDecision);
 
 // 11. GENERAL SETTINGS & PROFILE API

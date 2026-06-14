@@ -108,7 +108,7 @@ const checkoutTransaction = db.transaction((data: any) => {
 
   const saleId = result.lastInsertRowid as number;
 
-  // 2. Insert items and decrement stock physical pools
+  // 2. Insert items and decrement variant stock if applicable
   const insertSaleItem = db.prepare(`
     INSERT INTO sale_items (sale_id, product_id, variant_id, sku, product_name, variant_name, quantity, buy_price, sell_price, line_total, line_profit)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -129,19 +129,15 @@ const checkoutTransaction = db.transaction((data: any) => {
       item.line_profit
     );
 
-    // Decrement inventory stock on product_variants
+    // Decrement inventory stock on product_variants for tracked variant items.
+    // Simple products don't need a batch insert here because their stock is dynamically 
+    // calculated as (SUM(batches) - SUM(sale_items)), and the sale_item is already inserted above.
     if (item.variant_id) {
       db.prepare(`
         UPDATE product_variants 
         SET stock_quantity = stock_quantity - ?, updated_at = ?
         WHERE id = ?
       `).run(item.quantity, timestamp, item.variant_id);
-    } else {
-      // For simple products, insert a batch record with a negative offset quantity so the total pool remains mathematically accurate!
-      db.prepare(`
-        INSERT INTO stock_batches (product_id, variant_id, quantity_added, buy_price, sell_price, reason, added_by_user_id, created_at)
-        VALUES (?, NULL, ?, ?, ?, 'Sale checkout', ?, ?)
-      `).run(item.product_id, -item.quantity, item.buy_price, item.sell_price, userId, timestamp);
     }
   }
 

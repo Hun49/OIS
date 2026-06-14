@@ -39,9 +39,16 @@ export function searchPos(req: Request, res: Response) {
 
     const products = db.prepare(sql).all(...params) as any[];
 
-    // Extract variants
+    // Extract variants in one pass to avoid N+1 bottleneck
+    const allVariants = db.prepare('SELECT * FROM product_variants WHERE is_active = 1').all() as any[];
+    const variantsMap = new Map<number, any[]>();
+    allVariants.forEach(v => {
+      if (!variantsMap.has(v.product_id)) variantsMap.set(v.product_id, []);
+      variantsMap.get(v.product_id)!.push(v);
+    });
+
     for (const p of products) {
-      const variants = db.prepare('SELECT * FROM product_variants WHERE product_id = ? AND is_active = 1').all(p.id) as any[];
+      const variants = variantsMap.get(p.id) || [];
       p.variants = variants;
       if (p.has_variants) {
         p.stock = variants.reduce((acc, v) => acc + (v.stock_quantity || 0), 0);

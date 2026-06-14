@@ -27,6 +27,7 @@ dirs.forEach(dir => {
 // -------------------------------------------------------------------------
 export const db = new Database(path.join(process.cwd(), 'database/app.db'));
 db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');
 
 // Create tables if they do NOT exist
 db.exec(`

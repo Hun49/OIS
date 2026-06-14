@@ -1,40 +1,49 @@
 import { Request, Response } from 'express';
 import { db } from '../database/db.ts';
+import { getRefundsCost, calculateNetTotals } from '../utils/financial.ts';
 
 export function getStats(req: Request, res: Response) {
   try {
     const todayStr = new Date().toISOString().split('T')[0] + '%'; // match dates starting with YYYY-MM-DD
 
     // 1. Sales today
-    const salesStmt = db.prepare("SELECT COUNT(*) as count, SUM(total_amount) as total_rev, SUM(total_profit) as total_prof FROM sales WHERE created_at LIKE ?");
-    const salesToday = salesStmt.get(todayStr) as any;
+    const salesData = db.prepare("SELECT * FROM sales WHERE created_at LIKE ? AND status = 'completed'").all(todayStr) as any[];
+    
+    const refunds = getRefundsCost(todayStr);
+    const netTotals = calculateNetTotals(salesData, refunds);
 
-    const returnsTodayStmt = db.prepare("SELECT COUNT(*) as count, SUM(refund_amount) as total_refund FROM return_requests WHERE status = 'approved' AND approved_at LIKE ?");
-    const returnsToday = returnsTodayStmt.get(todayStr) as any;
-
-    const netSalesCount = (salesToday?.count || 0);
-    const netRevenueToday = (salesToday?.total_rev || 0) - (returnsToday?.total_refund || 0);
-    const netProfitToday = (salesToday?.total_prof || 0) - (returnsToday?.total_refund || 0);
+    const netSalesCount = salesData.length;
+    const netRevenueToday = netTotals.total_revenue;
+    const netProfitToday = netTotals.total_profit;
 
     // 2. Low stock alert counter
     // A product or variant is low stock if current inventory is <= threshold.
-    // We sum up both products (without variants) and variant items that fall below threshold.
-    const simpleLowStock = db.prepare(`
-      SELECT COUNT(*) as count FROM products 
-      WHERE has_variants = 0 AND is_active = 1 AND id IN (
-        SELECT product_id FROM stock_batches
-        GROUP BY product_id
-        HAVING SUM(quantity_added) <= low_stock_threshold
-      )
-    `).get() as any;
+    // We compute this consistently with the getLowStockAlerts method.
+    const productStocks = db.prepare(`
+      SELECT id, low_stock_threshold, has_variants
+      FROM products
+      WHERE is_active = 1
+    `).all() as any[];
 
-    // For variants stock tracking, we query product_variants
-    const variantLowStock = db.prepare(`
-      SELECT COUNT(*) as count FROM product_variants 
-      WHERE is_active = 1 AND stock_quantity <= low_stock_threshold
-    `).get() as any;
+    let totalLowStockCount = 0;
 
-    const totalLowStockCount = (simpleLowStock?.count || 0) + (variantLowStock?.count || 0);
+    productStocks.forEach(p => {
+      if (p.has_variants === 1) {
+        const lowVars = db.prepare(`
+          SELECT COUNT(*) as count
+          FROM product_variants
+          WHERE product_id = ? AND is_active = 1 AND stock_quantity <= low_stock_threshold
+        `).get(p.id) as any;
+        totalLowStockCount += (lowVars?.count || 0);
+      } else {
+        const addedSet = db.prepare('SELECT SUM(quantity_added) as qty FROM stock_batches WHERE product_id = ?').get(p.id) as any;
+        const soldSet = db.prepare('SELECT SUM(quantity) as qty FROM sale_items WHERE product_id = ?').get(p.id) as any;
+        const currentStock = (addedSet?.qty || 0) - (soldSet?.qty || 0);
+        if (currentStock <= p.low_stock_threshold) {
+          totalLowStockCount += 1;
+        }
+      }
+    });
 
     // 3. Top selling product today
     const topProdStmt = db.prepare(`
@@ -66,7 +75,7 @@ export function getStats(req: Request, res: Response) {
 
     let topEmployee: any = null;
     if (empCount >= 2) {
-      // Find top performing employee today (subtracting returns processed by or associated with them)
+      // Find top performing employee today (subtracting returns associated with the sales they made)
       const topEmpStmt = db.prepare(`
         SELECT 
           u.full_name as name, 
@@ -75,11 +84,12 @@ export function getStats(req: Request, res: Response) {
         FROM sales s
         INNER JOIN users u ON s.sold_by_user_id = u.id
         LEFT JOIN (
-          SELECT rr.requested_by_user_id, SUM(rr.refund_amount) as returned_amt
+          SELECT s2.sold_by_user_id, SUM(rr.refund_amount) as returned_amt
           FROM return_requests rr
+          INNER JOIN sales s2 ON rr.sale_id = s2.id
           WHERE rr.status = 'approved' AND rr.approved_at LIKE ?
-          GROUP BY rr.requested_by_user_id
-        ) ret ON u.id = ret.requested_by_user_id
+          GROUP BY s2.sold_by_user_id
+        ) ret ON u.id = ret.sold_by_user_id
         WHERE s.created_at LIKE ? AND u.role_type = 'employee'
         GROUP BY s.sold_by_user_id
         ORDER BY revenue DESC

@@ -1,7 +1,7 @@
 import { db } from '../database/db.ts';
 import { executeBackup, checkRetentionStatusAndDailyBackup } from '../services/backupService.ts';
 
-export function runStartupBackupRecovery() {
+export async function runStartupBackupRecovery() {
   console.log('[System Recovery] Running startup backup audit...');
   const now = new Date();
   const todayStr = now.toISOString().split('T')[0];
@@ -19,7 +19,7 @@ export function runStartupBackupRecovery() {
       .run(yesterdayStr, new Date().toISOString());
     
     console.log('[System Recovery] Seeded last_backup_date. Triggering startup backup recovery first...');
-    executeBackup('auto', null);
+    await executeBackup('auto', null);
     db.prepare("UPDATE settings SET setting_value = ?, updated_at = ? WHERE setting_key = 'last_backup_date'")
       .run(todayStr, new Date().toISOString());
   } else {
@@ -30,10 +30,17 @@ export function runStartupBackupRecovery() {
 
     // If last backup is NOT yesterday AND last backup is NOT today, it means we definitely missed it
     if (lastBackupDate !== yesterdayStr && lastBackupDate !== todayStr) {
-      console.log(`[System Recovery] Backups missed since ${lastBackupDate}! Triggering recovery backup...`);
-      executeBackup('auto', null);
-      db.prepare("UPDATE settings SET setting_value = ?, updated_at = ? WHERE setting_key = 'last_backup_date'")
-        .run(todayStr, new Date().toISOString());
+      console.log(`[System Recovery] CRITICAL: Backups MISSED since ${lastBackupDate}.`);
+      
+      try {
+        const filename = await executeBackup('startup', null);
+        console.log(`[System Recovery] SUCCESS: Created startup recovery backup: ${filename}. System operation safe.`);
+        
+        db.prepare("UPDATE settings SET setting_value = ?, updated_at = ? WHERE setting_key = 'last_backup_date'")
+          .run(todayStr, new Date().toISOString());
+      } catch (err: any) {
+        console.error('[System Recovery] FATAL: Startup backup recovery failed!', err);
+      }
     }
   }
 }
