@@ -109,9 +109,9 @@ db.exec(`
     variant_label_2 TEXT,
     variant_label_3 TEXT,
     description TEXT,
-    stock_quantity INTEGER DEFAULT 0,
-    buy_price REAL DEFAULT 0,
-    sell_price REAL DEFAULT 0,
+    stock_quantity INTEGER DEFAULT 0 CHECK(stock_quantity >= 0),
+    buy_price REAL DEFAULT 0 CHECK(buy_price >= 0),
+    sell_price REAL DEFAULT 0 CHECK(sell_price >= 0),
     low_stock_threshold INTEGER DEFAULT 0,
     expiry_date TEXT,
     is_active INTEGER DEFAULT 1,
@@ -141,7 +141,8 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sale_number TEXT NOT NULL UNIQUE,
     sold_by_user_id INTEGER,
-    payment_type TEXT NOT NULL, -- 'cash' or 'mobile_transfer'
+    payment_type TEXT NOT NULL, -- 'cash' or 'mobile'
+    payment_subtype TEXT, -- 'none', 'transaction_id', 'piv'
     total_items INTEGER NOT NULL,
     subtotal REAL NOT NULL,
     discount_amount REAL DEFAULT 0,
@@ -164,9 +165,9 @@ db.exec(`
     sku TEXT NOT NULL,
     product_name TEXT NOT NULL,
     variant_name TEXT,
-    quantity INTEGER NOT NULL,
-    buy_price REAL NOT NULL,
-    sell_price REAL NOT NULL,
+    quantity INTEGER NOT NULL CHECK(quantity > 0),
+    buy_price REAL NOT NULL CHECK(buy_price >= 0),
+    sell_price REAL NOT NULL CHECK(sell_price >= 0),
     line_total REAL NOT NULL,
     line_profit REAL NOT NULL,
     FOREIGN KEY(sale_id) REFERENCES sales(id)
@@ -246,6 +247,13 @@ db.exec(`
 // Try inserting must_change_password column into users table if not already existing
 try {
   db.exec('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0');
+} catch (e) {
+  // Column already exists
+}
+
+// Try inserting payment_subtype column into sales table if not already existing
+try {
+  db.exec('ALTER TABLE sales ADD COLUMN payment_subtype TEXT DEFAULT "none"');
 } catch (e) {
   // Column already exists
 }

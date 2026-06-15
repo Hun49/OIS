@@ -47,6 +47,7 @@ router.post('/stock/adjust', requireAuth, requirePermission('can_adjust_stock'),
 
 // 5. SALES (POSCheckout) API
 router.post('/sales/checkout', requireAuth, requirePermission('can_sell'), uploader.single('receipt_image'), salesController.checkout);
+router.get('/sales/next-piv', requireAuth, requirePermission('can_sell'), salesController.getNextPiv);
 
 // 6. RETURNS API
 router.get('/returns', requireAuth, returnsController.getReturns);

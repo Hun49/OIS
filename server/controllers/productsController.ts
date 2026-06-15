@@ -118,8 +118,11 @@ const createProductTransaction = db.transaction((data: any) => {
       
       const vPct = parseFloat(v.profit_percentage) || pPct;
       const vBPrice = parseFloat(v.buy_price) || bPrice;
+      if (vBPrice < 0) throw new Error(`Buy price for variant ${vName} cannot be negative.`);
+      if (vPct < -100) throw new Error(`Profit percentage for variant ${vName} cannot be less than -100%.`);
       const vSPrice = parseFloat((vBPrice * (1 + vPct / 100)).toFixed(2));
       const vQty = parseInt(v.initial_quantity) || 0;
+      if (vQty < 0) throw new Error(`Initial quantity for variant ${vName} cannot be negative.`);
 
       const vResult = insertVariant.run(
         productId,
@@ -214,10 +217,17 @@ const updateProductTransaction = db.transaction((data: any) => {
   let pPct = beforeObj.profit_percentage;
 
   if (pricePermission) {
-    if (buy_price !== undefined) bPrice = parseFloat(buy_price);
-    if (profit_percentage !== undefined) pPct = parseFloat(profit_percentage);
+    if (buy_price !== undefined) {
+      bPrice = parseFloat(buy_price);
+      if (bPrice < 0) throw new Error('Buy price cannot be negative.');
+    }
+    if (profit_percentage !== undefined) {
+      pPct = parseFloat(profit_percentage);
+      if (pPct < -100) throw new Error('Profit percentage cannot be less than -100%.');
+    }
     if (sell_price !== undefined) {
       sPrice = parseFloat(sell_price);
+      if (sPrice < 0) throw new Error('Sell price cannot be negative.');
     } else if (buy_price !== undefined || profit_percentage !== undefined) {
       sPrice = parseFloat((bPrice * (1 + pPct / 100)).toFixed(2));
     }
@@ -375,6 +385,11 @@ const adjustStockTransaction = db.transaction((data: any) => {
 
   const qtyChange = parseInt(quantity);
   
+  if (qtyChange === 0) throw new Error('Adjustment quantity cannot be zero.');
+  if (['damage', 'loss', 'expiry'].includes(adjustment_type) && qtyChange > 0) {
+    throw new Error(`Adjustment type '${adjustment_type}' must be a negative deduction, not an addition.`);
+  }
+
   const insertAdj = db.prepare(`
     INSERT INTO inventory_adjustments (product_id, variant_id, adjustment_type, quantity_changed, reason, adjusted_by_user_id, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?)

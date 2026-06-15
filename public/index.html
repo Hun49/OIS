@@ -222,29 +222,43 @@
                   <span style="color: var(--accent-success);" id="cart-total">0.00 ETB</span>
                 </div>
 
-                <form id="checkout-form" style="display: flex; flex-direction: column; gap: 10px;">
+                <form id="checkout-form" style="display: flex; flex-direction: column; gap: 8px;">
                   <div class="form-group" style="margin-bottom: 0;">
-                    <label>Settlement Mode</label>
-                    <select id="checkout-paytype" class="input-control" style="padding: 8px 10px;" onchange="toggleMobileFields(this.value)">
-                      <option value="cash">Pristine Cash Payment</option>
-                      <option value="mobile_transfer">Electronic Mobile Transfer</option>
+                    <label style="font-size: 11px;">Payment Method</label>
+                    <select id="checkout-paytype" class="input-control" style="padding: 6px 10px; font-size: 13px;" onchange="handlePaymentMethodChange(this.value)">
+                      <option value="cash">Cash Payment</option>
+                      <option value="mobile">Mobile Transaction</option>
                     </select>
                   </div>
 
                   <!-- Mobile fields -->
-                  <div id="checkout-mobile-group" style="display: none; flex-direction: column; gap: 8px; background: rgba(0,0,0,0.2); padding: 10px; border-radius: 6px; border: 1px solid var(--border-glass);">
+                  <div id="checkout-mobile-group" style="display: none; flex-direction: column; gap: 8px; background: rgba(0,0,0,0.25); padding: 8px; border-radius: 6px; border: 1px solid var(--border-glass);">
                     <div class="form-group" style="margin-bottom: 0;">
-                      <label for="checkout-txref">Mobile Transaction reference number</label>
-                      <input type="text" id="checkout-txref" class="input-control" placeholder="e.g. FT1928372X" style="padding: 6px 10px;">
+                      <label style="font-size: 11px;">Mobile Selection Type</label>
+                      <select id="checkout-mobile-subtype" class="input-control" style="padding: 5px 8px; font-size: 12px;" onchange="handleMobileSubtypeChange(this.value)">
+                        <option value="">-- Choose Subtype --</option>
+                        <option value="transaction_id">Transaction ID</option>
+                        <option value="piv">Payment Image Reference (PIV)</option>
+                      </select>
                     </div>
-                    <div class="form-group" style="margin-bottom: 0;">
-                      <label for="checkout-img">Local Storage Reference (Optional Photo)</label>
-                      <input type="file" id="checkout-img" class="input-control" style="padding: 4px; font-size: 11px;" accept="image/*">
+
+                    <!-- Transaction ID input -->
+                    <div id="group-txid" class="form-group" style="display: none; margin-bottom: 0;">
+                      <label for="checkout-txref" style="font-size: 11px;">Transaction Ref Number</label>
+                      <input type="text" id="checkout-txref" class="input-control" placeholder="e.g. FT1928372X" style="padding: 5px 8px; font-size: 12px;">
+                    </div>
+
+                    <!-- PIV display -->
+                    <div id="group-piv" class="form-group" style="display: none; margin-bottom: 0;">
+                      <p style="font-size: 11px; color: var(--text-secondary); margin-bottom: 4px;">Sequential PIV assigned:</p>
+                      <div id="display-piv-code" style="padding: 8px; background: rgba(0,0,0,0.3); border: 1px dashed var(--accent-color); border-radius: 4px; text-align: center; color: var(--accent-color); font-weight: 700; font-family: monospace; font-size: 16px;">
+                        PIV-GENERATING...
+                      </div>
                     </div>
                   </div>
 
-                  <button type="submit" class="btn btn-success" style="width: 100%; justify-content: center; padding: 12px; font-weight: 600;">
-                    Completed, Log Order <i data-lucide="check"></i>
+                  <button type="submit" class="btn btn-success" style="width: 100%; justify-content: center; padding: 10px; font-weight: 600; margin-top: 4px;">
+                    Complete Sale <i data-lucide="check"></i>
                   </button>
                 </form>
               </div>
@@ -361,10 +375,10 @@
           </div>
 
           <div class="glass-card" style="margin-bottom: 24px;">
-            <form id="report-form" class="report-parameters-bar">
+            <form id="report-form" class="report-parameters-bar" style="display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px;">
               <div class="form-group" style="margin-bottom: 0;">
-                <label>Metric Selection</label>
-                <select id="report-type" class="input-control" onchange="toggleDateInputs(this.value)">
+                <label style="font-size: 11px;">Metric Selection</label>
+                <select id="report-type" class="input-control" onchange="toggleDateInputs(this.value)" style="font-size: 12px; padding: 6px 10px;">
                   <option value="daily_sales">Daily Sales (Today's Logs)</option>
                   <option value="weekly_revenue">Weekly Revenue Summary</option>
                   <option value="monthly_revenue">Monthly Revenue Summary</option>
@@ -376,16 +390,24 @@
 
               <div id="report-date-inputs" style="display: none; align-items: center; gap: 10px;">
                 <div class="form-group" style="margin-bottom: 0;">
-                  <label for="report-start">Start Date</label>
-                  <input type="date" id="report-start" class="input-control" style="padding: 7px 10px;">
+                  <label for="report-start" style="font-size: 11px;">Start Date</label>
+                  <input type="date" id="report-start" class="input-control" style="padding: 6px 10px; font-size: 12px;">
                 </div>
                 <div class="form-group" style="margin-bottom: 0;">
-                  <label for="report-end">End Date</label>
-                  <input type="date" id="report-end" class="input-control" style="padding: 7px 10px;">
+                  <label for="report-end" style="font-size: 11px;">End Date</label>
+                  <input type="date" id="report-end" class="input-control" style="padding: 6px 10px; font-size: 12px;">
                 </div>
               </div>
 
-              <button type="submit" class="btn btn-primary" style="padding: 10px 18px;"><i data-lucide="filter"></i> Generate Diagnostic</button>
+              <div class="form-group" style="margin-bottom: 0; flex: 1; min-width: 200px;">
+                <label style="font-size: 11px;">Live Filter (Sale # / PIV / Ref / ID)</label>
+                <div style="position: relative;">
+                  <i data-lucide="search" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px; color: var(--text-muted);"></i>
+                  <input type="text" id="report-search-query" class="input-control" placeholder="Type to filter..." style="padding: 7px 10px 7px 32px; font-size: 12px; width: 100%;" onkeyup="filterReportRows(this.value)">
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary" style="padding: 9px 16px; font-size: 13px; font-weight: 600;"><i data-lucide="filter" style="width:14px; height:14px;"></i> Run Report</button>
             </form>
           </div>
 
@@ -595,6 +617,7 @@
       <div id="prod-modal-error" style="display: none; color: #ef4444; font-size: 13px; margin-bottom: 12px;"></div>
       
       <form id="prod-modal-form">
+        <!-- 1. Product details -->
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px;">
           <div class="form-group">
             <label for="prod-category">Product category *</label>
@@ -618,26 +641,15 @@
             <label for="prod-unit">Unit type</label>
             <input type="text" id="prod-unit" class="input-control" placeholder="e.g. pcs, box, bottle, pack" value="pcs">
           </div>
-          <div class="form-group">
-            <label for="prod-threshold">Low stock alert threshold</label>
-            <input type="number" id="prod-threshold" class="input-control" min="0" value="5">
-          </div>
-          <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin-top: 24px;">
-            <input type="checkbox" id="prod-expiry-required" style="width: 16px; height: 16px;">
-            <label for="prod-expiry-required">Require Expiry Date (Mandatory for pharmacy items)</label>
-          </div>
         </div>
 
-        <div class="form-group" style="margin-top: 10px;">
-          <label for="prod-desc">Description (Keywords are searchable in POS)</label>
-          <textarea id="prod-desc" class="input-control" rows="2" placeholder="Describe size, colors, or technical keywords..."></textarea>
-        </div>
-
-        <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 12px 0;">
+        <!-- 2. Variant options if applicable -->
+        <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 16px 0 12px 0;">
           <input type="checkbox" id="prod-has-variants" style="width: 16px; height: 16px;" onchange="toggleVariantSection(this.checked)">
           <label for="prod-has-variants">This product supports variants (Size / color patterns)</label>
         </div>
 
+        <!-- 3. Quantity (and simple pricing) -->
         <!-- Block simple prices if simple product -->
         <div id="simple-pricing-section" style="display: flex; gap: 16px; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 6px; border: 1px solid var(--border-glass-bright);">
           <div class="form-group" style="flex: 1; margin-bottom: 0;">
@@ -667,7 +679,7 @@
         <!-- Block Variants definitions -->
         <div id="variants-section" style="display: none; background: rgba(255,255,255,0.01); padding: 14px; border: 1px dashed var(--border-glass); border-radius: 8px; margin-top: 10px;">
           <h3 style="font-size: 12px; margin-bottom: 10px; color: var(--accent-color);">Variant Custom Builder</h3>
-          <p class="subtitle" style="margin-bottom: 12px;">Add rows detailing product variants (e.g. shoes size/colors, apparel sizes) and their margins</p>
+          <p class="subtitle" style="margin-bottom: 12px;">Add rows detailing product variants and their quantities</p>
           
           <div id="variants-list" style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px;">
             <!-- Injected custom rows -->
@@ -675,6 +687,24 @@
           
           <button type="button" class="btn" style="padding: 6px 10px; font-size:11px;" onclick="addVariantRow()"><i data-lucide="plus"></i> Add Variant Row</button>
         </div>
+
+        <!-- 4. Low Stock Threshold -->
+        <div class="form-group" style="margin-top: 16px; max-width: 280px;">
+          <label for="prod-threshold" style="color: var(--accent-warning);">Low stock alert threshold</label>
+          <input type="number" id="prod-threshold" class="input-control" min="0" value="5">
+        </div>
+
+        <!-- 5. Other remaining fields -->
+        <div class="form-group" style="display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 16px 0;">
+          <input type="checkbox" id="prod-expiry-required" style="width: 16px; height: 16px;">
+          <label for="prod-expiry-required">Require Expiry Date (Mandatory for pharmacy items)</label>
+        </div>
+
+        <div class="form-group" style="margin-top: 10px;">
+          <label for="prod-desc">Description (Keywords are searchable in POS)</label>
+          <textarea id="prod-desc" class="input-control" rows="2" placeholder="Describe size, colors, or technical keywords..."></textarea>
+        </div>
+
 
         <div style="display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px;">
           <button type="button" class="btn" onclick="closeModal('modal-product')">Cancel</button>

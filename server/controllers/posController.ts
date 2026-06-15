@@ -37,15 +37,39 @@ export function searchPos(req: Request, res: Response) {
       ) DESC, p.name ASC
     `;
 
+    sql += ' LIMIT 50';
+
     const products = db.prepare(sql).all(...params) as any[];
 
-    // Extract variants in one pass to avoid N+1 bottleneck
-    const allVariants = db.prepare('SELECT * FROM product_variants WHERE is_active = 1').all() as any[];
+    // Batch fetch all variants for these products
+    const pIds = products.map(p => p.id);
     const variantsMap = new Map<number, any[]>();
-    allVariants.forEach(v => {
-      if (!variantsMap.has(v.product_id)) variantsMap.set(v.product_id, []);
-      variantsMap.get(v.product_id)!.push(v);
-    });
+    if (pIds.length > 0) {
+      const placeholders = pIds.map(() => '?').join(',');
+      const variants = db.prepare(`SELECT * FROM product_variants WHERE product_id IN (${placeholders}) AND is_active = 1`).all(...pIds) as any[];
+      variants.forEach(v => {
+        if (!variantsMap.has(v.product_id)) variantsMap.set(v.product_id, []);
+        variantsMap.get(v.product_id)!.push(v);
+      });
+    }
+
+    // Batch fetch stock summaries for simple products to avoid N+1
+    const simpleProductStockMap = new Map<number, number>();
+    const simplePIds = products.filter(p => !p.has_variants).map(p => p.id);
+    if (simplePIds.length > 0) {
+      const placeholders = simplePIds.map(() => '?').join(',');
+      
+      const batches = db.prepare(`SELECT product_id, SUM(quantity_added) as total FROM stock_batches WHERE product_id IN (${placeholders}) GROUP BY product_id`).all(...simplePIds) as any[];
+      const sales = db.prepare(`SELECT product_id, SUM(quantity) as total FROM sale_items WHERE product_id IN (${placeholders}) GROUP BY product_id`).all(...simplePIds) as any[];
+      
+      const batchValues = new Map(batches.map(b => [b.product_id, b.total]));
+      const saleValues = new Map(sales.map(s => [s.product_id, s.total]));
+      
+      simplePIds.forEach(id => {
+        const qty = (batchValues.get(id) || 0) - (saleValues.get(id) || 0);
+        simpleProductStockMap.set(id, qty);
+      });
+    }
 
     for (const p of products) {
       const variants = variantsMap.get(p.id) || [];
@@ -53,9 +77,7 @@ export function searchPos(req: Request, res: Response) {
       if (p.has_variants) {
         p.stock = variants.reduce((acc, v) => acc + (v.stock_quantity || 0), 0);
       } else {
-        const added = db.prepare('SELECT SUM(quantity_added) as qty FROM stock_batches WHERE product_id = ?').get(p.id) as any;
-        const sold = db.prepare('SELECT SUM(quantity) as qty FROM sale_items WHERE product_id = ?').get(p.id) as any;
-        p.stock = (added?.qty || 0) - (sold?.qty || 0);
+        p.stock = simpleProductStockMap.get(p.id) || 0;
       }
     }
 

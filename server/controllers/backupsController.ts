@@ -105,10 +105,12 @@ export async function restoreBackup(req: Request, res: Response) {
     const { success, message } = await restoreFromBackup(id, req.session.userId!);
     
     if (success) {
-      // Since restoring changes the database and sessions might rely on it,
-      // and we closed the DB connection, the app will likely need a process restart.
-      // In this specific sandbox, I can't signal a restart, but I can respond.
-      return res.json({ success: true, message: 'Restore completed successfully. The application will now restart.' });
+      // Force logout of the current session so the user must re-authenticate against the restored database state.
+      // This prevents "Ghost Auth" where a user is logged in as an ID that might not exist in the old DB.
+      req.session.destroy(() => {
+         // Proceed after destruction
+      });
+      return res.json({ success: true, message: 'Restore completed successfully. You have been logged out for security. Please re-login.' });
     } else {
       return res.status(500).json({ error: message });
     }

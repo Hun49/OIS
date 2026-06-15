@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { db, logAudit } from '../database/db.ts';
 
 const checkoutTransaction = db.transaction((data: any) => {
-  const { cart, payment_type, transaction_reference, discount_amount, userId, timestamp, diskFilename } = data;
+  const { cart, payment_type, payment_subtype, transaction_reference, discount_amount, userId, timestamp, diskFilename } = data;
 
   // Check inventory availability and build records
   let totalItems = 0;
@@ -42,7 +42,6 @@ const checkoutTransaction = db.transaction((data: any) => {
       sellPrice = variant.sell_price;
       variantName = variant.variant_name;
     } else {
-      // Query simple product stock sum of batches minus sold items to confirm availability
       const added = db.prepare('SELECT SUM(quantity_added) as qty FROM stock_batches WHERE product_id = ?').get(pid) as any;
       const sold = db.prepare('SELECT SUM(quantity) as qty FROM sale_items WHERE product_id = ?').get(pid) as any;
       const currentStock = (added?.qty || 0) - (sold?.qty || 0);
@@ -77,38 +76,53 @@ const checkoutTransaction = db.transaction((data: any) => {
 
   const disc = parseFloat(discount_amount) || 0;
   const finalAmount = subtotal - disc;
-  // Adjust profit to subtract the discount
   const finalProfit = totalProfit - disc;
 
-  // Generate unique sale number e.g. SALE-20260613-XXXX (random hex)
   const dStr = new Date().toISOString().split('T')[0].replace(/-/g, '');
   const randId = Math.random().toString(36).substring(2, 6).toUpperCase();
   const saleNumber = `SALE-${dStr}-${randId}`;
 
+  // Handle PIV generation if subtype is piv
+  let finalTxRef = transaction_reference;
+  if (payment_type === 'mobile' && payment_subtype === 'piv') {
+    const lastPiv = db.prepare("SELECT transaction_reference FROM sales WHERE payment_subtype = 'piv' ORDER BY id DESC LIMIT 1").get() as any;
+    if (!lastPiv || !lastPiv.transaction_reference) {
+      finalTxRef = 'PIV-001';
+    } else {
+      const match = lastPiv.transaction_reference.match(/PIV-(\d+)/);
+      if (!match) {
+        finalTxRef = 'PIV-001';
+      } else {
+        const nextNum = parseInt(match[1]) + 1;
+        finalTxRef = `PIV-${String(nextNum).padStart(3, '0')}`;
+      }
+    }
+  }
+
   // 1. Save Sale record
   const insertSale = db.prepare(`
-    INSERT INTO sales (sale_number, sold_by_user_id, payment_type, total_items, subtotal, discount_amount, total_amount, total_cost, total_profit, transaction_reference, receipt_file_name, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO sales (sale_number, sold_by_user_id, payment_type, payment_subtype, total_items, subtotal, discount_amount, total_amount, total_cost, total_profit, transaction_reference, receipt_file_name, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = insertSale.run(
     saleNumber,
     userId,
-    payment_type, // 'cash' or 'mobile_transfer'
+    payment_type, // 'cash' or 'mobile'
+    payment_subtype || 'none',
     totalItems,
     subtotal,
     disc,
     finalAmount,
     totalCost,
     finalProfit,
-    transaction_reference || null,
+    finalTxRef || null,
     diskFilename,
     timestamp
   );
 
   const saleId = result.lastInsertRowid as number;
 
-  // 2. Insert items and decrement variant stock if applicable
   const insertSaleItem = db.prepare(`
     INSERT INTO sale_items (sale_id, product_id, variant_id, sku, product_name, variant_name, quantity, buy_price, sell_price, line_total, line_profit)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -129,9 +143,6 @@ const checkoutTransaction = db.transaction((data: any) => {
       item.line_profit
     );
 
-    // Decrement inventory stock on product_variants for tracked variant items.
-    // Simple products don't need a batch insert here because their stock is dynamically 
-    // calculated as (SUM(batches) - SUM(sale_items)), and the sale_item is already inserted above.
     if (item.variant_id) {
       db.prepare(`
         UPDATE product_variants 
@@ -148,14 +159,35 @@ const checkoutTransaction = db.transaction((data: any) => {
     saleId,
     null,
     { sale_number: saleNumber, total_amount: finalAmount },
-    `Created sale ${saleNumber}. Payment: ${payment_type}. Number of items: ${totalItems}.`
+    `Created sale ${saleNumber}. Payment: ${payment_type}. Subtype: ${payment_subtype}. Number of items: ${totalItems}.`
   );
 
-  return { saleId, sale_number: saleNumber };
+  return { 
+    saleId, 
+    sale_number: saleNumber, 
+    piv_assigned: (payment_subtype === 'piv') ? finalTxRef : null 
+  };
 });
 
+export function getNextPiv(req: Request, res: Response) {
+  try {
+    const lastPiv = db.prepare("SELECT transaction_reference FROM sales WHERE payment_subtype = 'piv' ORDER BY id DESC LIMIT 1").get() as any;
+    let nextPiv = 'PIV-001';
+    if (lastPiv && lastPiv.transaction_reference) {
+      const match = lastPiv.transaction_reference.match(/PIV-(\d+)/);
+      if (match) {
+        const nextNum = parseInt(match[1]) + 1;
+        nextPiv = `PIV-${String(nextNum).padStart(3, '0')}`;
+      }
+    }
+    return res.json({ nextPiv });
+  } catch (err: any) {
+    return res.status(500).json({ error: err.message });
+  }
+}
+
 export function checkout(req: Request, res: Response) {
-  const { cart: cartJSON, payment_type, transaction_reference, discount_amount } = req.body;
+  const { cart: cartJSON, payment_type, payment_subtype, transaction_reference, discount_amount } = req.body;
 
   if (!cartJSON || !payment_type) {
     return res.status(400).json({ error: 'Cart content and payment type are required.' });
@@ -173,6 +205,7 @@ export function checkout(req: Request, res: Response) {
     const result = checkoutTransaction({
       cart,
       payment_type,
+      payment_subtype,
       transaction_reference,
       discount_amount,
       userId: req.session.userId!,

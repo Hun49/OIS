@@ -829,18 +829,19 @@ p.subtitle {
 .pos-cart {
   display: flex;
   flex-direction: column;
-  height: calc(100vh - 120px);
+  height: calc(100vh - 100px);
   position: sticky;
   top: 30px;
+  padding: 14px !important;
 }
 
 .cart-items-wrapper {
-  flex-grow: 1;
+  flex: 1;
   overflow-y: auto;
-  padding: 14px 0;
+  padding: 10px 4px 10px 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   border-bottom: 1px solid var(--border-glass);
 }
 
@@ -848,7 +849,7 @@ p.subtitle {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px;
+  padding: 8px 10px;
   background: rgba(255, 255, 255, 0.01);
   border: 1px solid var(--border-glass);
   border-radius: 8px;

@@ -216,11 +216,6 @@ function showConfirm(message, onConfirm, onCancel = null, title = "Confirmation 
   
   okBtn.onclick = () => closeConfirm(true);
   cancelBtn.onclick = () => closeConfirm(false);
-  modalEl.onclick = (e) => {
-    if (e.target === modalEl) {
-      closeConfirm(false);
-    }
-  };
 }
 
 // Redirect standard window.alert calls to our custom toast notifications
@@ -445,6 +440,23 @@ window.addEventListener('DOMContentLoaded', () => {
   document.getElementById('profile-form').addEventListener('submit', updateMyProfile);
   document.getElementById('shop-settings-form').addEventListener('submit', updateShopSettings);
   document.getElementById('report-form').addEventListener('submit', generateReport);
+
+  // Global Modal Backdrop Click Handler (Close on backdrop click for non-confirmation modals)
+  document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal') && e.target.classList.contains('active')) {
+      const modalId = e.target.id;
+      // Do NOT close confirmation modals on backdrop click
+      if (modalId === 'dynamic-custom-confirm') return;
+
+      // Close if it's a standard modal or the alert overlay (alert allows backdrop close)
+      if (modalId === 'dynamic-custom-alert') {
+        const okBtn = document.getElementById('custom-alert-ok-btn');
+        if (okBtn) okBtn.click();
+      } else {
+        closeModal(modalId);
+      }
+    }
+  });
 
   // Auto trigger alerts check every 25 seconds
   setInterval(checkLowStockAlerts, 25000);
@@ -1026,12 +1038,33 @@ function recalcCartTotals() {
   document.getElementById('cart-total').innerText = `${total.toFixed(2)} ETB`;
 }
 
-function toggleMobileFields(val) {
+function handlePaymentMethodChange(val) {
   const group = document.getElementById('checkout-mobile-group');
-  if (val === 'mobile_transfer') {
+  if (val === 'mobile') {
     group.style.display = 'flex';
   } else {
     group.style.display = 'none';
+    document.getElementById('checkout-mobile-subtype').value = '';
+    handleMobileSubtypeChange('');
+  }
+}
+
+function handleMobileSubtypeChange(val) {
+  const groupTx = document.getElementById('group-txid');
+  const groupPiv = document.getElementById('group-piv');
+  
+  groupTx.style.display = (val === 'transaction_id') ? 'block' : 'none';
+  groupPiv.style.display = (val === 'piv') ? 'block' : 'none';
+  
+  if (val === 'piv') {
+    // Show a loading/placeholder. Actual generation happens on server.
+    document.getElementById('display-piv-code').innerText = 'PIV-PENDING';
+    // Optionally fetch the preview next PIV
+    fetch('/api/sales/next-piv')
+      .then(r => r.json())
+      .then(data => {
+        if (data.nextPiv) document.getElementById('display-piv-code').innerText = data.nextPiv;
+      });
   }
 }
 
@@ -1043,25 +1076,34 @@ function handleCheckout(e) {
   }
 
   const paytype = document.getElementById('checkout-paytype').value;
+  const paysub = document.getElementById('checkout-mobile-subtype').value;
   const discValue = parseFloat(document.getElementById('cart-discount').value) || 0;
   const txRef = document.getElementById('checkout-txref').value;
-  const fileInput = document.getElementById('checkout-img');
   const totalAmountText = document.getElementById('cart-total').innerText || '0.00';
 
+  // VALIDATION
+  if (paytype === 'mobile') {
+    if (!paysub) {
+      showToast('Validation Error: Please select a Mobile Subtype (Transaction ID or PIV).', 'error');
+      return;
+    }
+    if (paysub === 'transaction_id' && !txRef.trim()) {
+      showToast('Validation Error: Transaction ID is required for this mode.', 'error');
+      return;
+    }
+  }
+
   showConfirm(
-    `You are about to authorize an invoice order totaling ETB ${totalAmountText} with payment method [${paytype === 'mobile_transfer' ? 'Mobile Transfer' : 'Cash Payment'}]. Proceed with logging this sale?`,
+    `Confirm authorize of invoice totaling ETB ${totalAmountText} via [${paytype === 'mobile' ? 'Mobile: ' + paysub : 'Cash'}]?`,
     () => {
-      // Multi-part Form Data for upload support
       const formData = new FormData();
       formData.append('cart', JSON.stringify(cart));
       formData.append('payment_type', paytype);
+      formData.append('payment_subtype', paysub);
       formData.append('discount_amount', discValue);
       
-      if (paytype === 'mobile_transfer') {
+      if (paytype === 'mobile' && paysub === 'transaction_id') {
         formData.append('transaction_reference', txRef);
-        if (fileInput.files.length > 0) {
-          formData.append('receipt_image', fileInput.files[0]);
-        }
       }
 
       fetch('/api/sales/checkout', {
@@ -1073,12 +1115,14 @@ function handleCheckout(e) {
         if (data.error) {
           showToast(`Checkout failed: ${data.error}`, 'error');
         } else {
-          showToast(`Checkout authorized! Invoice Number: ${data.sale_number}`, 'success');
-          // Clear POS form
+          showToast(`Checkout authorized! Invoice: ${data.sale_number}`, 'success');
+          if (data.piv_assigned) {
+            showAlert(`Sale completion successful. Generated Payment Reference: ${data.piv_assigned}. Please label the external image folder accordingly.`, "PIV Code Assigned", "success");
+          }
           cart = [];
           document.getElementById('checkout-form').reset();
           document.getElementById('cart-discount').value = '0';
-          toggleMobileFields('cash');
+          handlePaymentMethodChange('cash');
           renderCart();
           triggerPOSSearch();
           loadInventory();
@@ -1086,11 +1130,11 @@ function handleCheckout(e) {
         }
       })
       .catch(err => {
-        showToast('Local storage or network interface error during checkout.', 'error');
+        showToast('System Interface Error during checkout authorization.', 'error');
       });
     },
     null,
-    "Authorize Payment"
+    "Authorize Order"
   );
 }
 
@@ -1679,6 +1723,7 @@ function loadReturns() {
 }
 
 function selectReturnDetails(saleId, saleItemId, saleNumber, itemTitle, itemPrice) {
+  closeModal('modal-sale-item-picker');
   document.getElementById('ret-request-error').style.display = 'none';
   document.getElementById('return-request-form').reset();
 
@@ -2199,10 +2244,14 @@ function generateReport(e) {
 
         data.sales.forEach(s => {
           const date = new Date(s.created_at).toLocaleString();
-          let rLabel = s.receipt_file_name 
-            ? ` (<a href="/uploads/receipts/${s.receipt_file_name}" target="_blank" style="color:var(--accent-color);">Photo Ref</a>)` 
-            : '';
-          let payLabel = s.payment_type === 'cash' ? 'Cash' : `Transfer${rLabel}`;
+          let payLabel = '';
+          if (s.payment_type === 'cash') {
+            payLabel = '<span style="color:var(--text-secondary);">Cash Payment</span>';
+          } else {
+            const sub = s.payment_subtype === 'transaction_id' ? 'TX-ID' : 'PIV-Ref';
+            const ref = s.transaction_reference ? `<div style="font-size:10px; color:var(--accent-color); font-family:var(--font-mono); font-weight:600;">${s.transaction_reference}</div>` : '';
+            payLabel = `<div>Mobile (${sub})</div>${ref}`;
+          }
 
           tbody.innerHTML += `
             <tr>
@@ -2211,7 +2260,7 @@ function generateReport(e) {
                 <div class="text-secondary" style="font-size:11px;">${date}</div>
               </td>
               <td><b>${s.cashier || 'Owner'}</b></td>
-              <td style="text-transform: capitalize;">${payLabel}</td>
+              <td style="font-size:12px;">${payLabel}</td>
               <td>${s.total_items} items</td>
               <td>${s.total_cost.toFixed(2)} ETB</td>
               <td><b style="color: var(--accent-success);">${s.total_amount.toFixed(2)} ETB</b></td>
@@ -2222,6 +2271,15 @@ function generateReport(e) {
       }
       lucide.createIcons();
     });
+}
+
+function filterReportRows(query) {
+  const q = query.toLowerCase();
+  const rows = document.querySelectorAll('#report-table-body tr');
+  rows.forEach(row => {
+    const text = row.innerText.toLowerCase();
+    row.style.display = text.includes(q) ? '' : 'none';
+  });
 }
 
 // -------------------------------------------------------------------------
