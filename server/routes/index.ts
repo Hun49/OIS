@@ -15,6 +15,7 @@ import * as auditLogsController from '../controllers/auditLogsController.ts';
 import * as backupsController from '../controllers/backupsController.ts';
 import * as settingsController from '../controllers/settingsController.ts';
 import * as posController from '../controllers/posController.ts';
+import * as onboardingController from '../controllers/onboardingController.ts';
 
 export const router = Router();
 
@@ -80,3 +81,9 @@ router.post('/profile/update', requireAuth, settingsController.updateProfile);
 
 // POS SEARCH API
 router.get('/pos/search', requireAuth, requirePermission('can_sell'), posController.searchPos);
+
+// 12. ONBOARDING API
+router.get('/onboarding/status', requireAuth, onboardingController.getOnboardingStatus);
+router.post('/onboarding/process', requireAuth, onboardingController.processOnboarding);
+router.post('/onboarding/suggest', requireAuth, onboardingController.suggestCategories);
+router.post('/onboarding/reset', requireAuth, requirePermission('can_manage_settings'), onboardingController.resetOnboarding);

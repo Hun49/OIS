@@ -345,6 +345,7 @@ const defaultSettings = [
   { key: 'last_backup_date', value: '' }, // track date of last automatic backup
   { key: 'shop_name', value: 'My Local Retail Shop' },
   { key: 'needs_retention_prompt', value: '0' }, // toggles front-end popup for older backups
+  { key: 'onboarding_complete', value: '0' },
 ];
 
 defaultSettings.forEach(s => {

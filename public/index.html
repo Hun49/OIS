@@ -570,7 +570,10 @@
                   <label for="set-timeout">Inactivity timeout limits (Minutes before auto logout)</label>
                   <input type="number" id="set-timeout" class="input-control" min="2" max="180" required>
                 </div>
-                <button type="submit" class="btn btn-primary" style="margin-top: 10px;">Apply Shop Settings</button>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px;">
+                  <button type="submit" class="btn btn-primary">Apply Shop Settings</button>
+                  <button type="button" class="btn btn-danger" style="background: rgba(239, 68, 68, 0.1); color: var(--accent-danger); border-color: rgba(239, 68, 68, 0.2);" onclick="confirmResetOnboarding()">Reset Onboarding</button>
+                </div>
               </form>
             </div>
           </div>
@@ -629,7 +632,7 @@
             <label for="prod-brand">Brand</label>
             <input type="text" id="prod-brand" class="input-control" placeholder="e.g. Nike, Pfizer, Coca-Cola">
           </div>
-          <div class="form-group" style="grid-column: span 2;">
+          <div class="form-group">
             <label for="prod-name">Product name *</label>
             <input type="text" id="prod-name" class="input-control" placeholder="e.g. Paracetamol Tablet, Air Max Sneakers" required>
           </div>
@@ -639,7 +642,11 @@
           </div>
           <div class="form-group">
             <label for="prod-unit">Unit type</label>
-            <input type="text" id="prod-unit" class="input-control" placeholder="e.g. pcs, box, bottle, pack" value="pcs">
+            <input type="text" id="prod-unit" class="input-control" placeholder="pcs" value="pcs">
+          </div>
+          <div class="form-group" id="prod-initial-qty-container">
+            <label for="prod-initial-qty">Initial Quantity</label>
+            <input type="number" id="prod-initial-qty" class="input-control" placeholder="0" min="0" value="0">
           </div>
         </div>
 
@@ -649,8 +656,7 @@
           <label for="prod-has-variants">This product supports variants (Size / color patterns)</label>
         </div>
 
-        <!-- 3. Quantity (and simple pricing) -->
-        <!-- Block simple prices if simple product -->
+        <!-- 3. Simple pricing section (if no variants) -->
         <div id="simple-pricing-section" style="display: flex; gap: 16px; background: rgba(0,0,0,0.15); padding: 12px; border-radius: 6px; border: 1px solid var(--border-glass-bright);">
           <div class="form-group" style="flex: 1; margin-bottom: 0;">
             <label for="prod-buy">Buy price (ETB)</label>
@@ -669,10 +675,6 @@
           <div class="form-group" style="flex: 1; margin-bottom: 0;">
             <label for="prod-sell">Sell price (ETB)</label>
             <input type="number" step="0.01" id="prod-sell" class="input-control" style="background: rgba(16,185,129,0.05); border-color: rgba(16,185,129,0.2); font-weight:600; color:var(--accent-success);" readonly>
-          </div>
-          <div class="form-group" style="flex: 1; margin-bottom: 0;">
-            <label for="prod-initial-qty">Initial Qty</label>
-            <input type="number" id="prod-initial-qty" class="input-control" placeholder="0" min="0" value="0">
           </div>
         </div>
 
@@ -1141,6 +1143,96 @@
 
   <!-- Top Center Toast Notifications Container -->
   <div id="toast-container" class="toast-container"></div>
+
+  <!-- K. Onboarding Wizard Modal -->
+  <div id="modal-onboarding" class="modal">
+    <div class="modal-content glass" style="max-width: 680px; padding: 0; overflow: hidden; border: 1px solid rgba(59, 130, 246, 0.4); box-shadow: 0 0 60px rgba(59, 130, 246, 0.15);">
+      
+      <!-- Wizard Header -->
+      <div style="background: rgba(59, 130, 246, 0.1); padding: 24px; border-bottom: 1px solid var(--border-glass-bright); display: flex; align-items: center; gap: 16px;">
+        <div style="background: var(--accent-color); color: #fff; width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);">
+          <i data-lucide="sparkles"></i>
+        </div>
+        <div>
+          <h2 style="font-size: 20px; font-weight: 800; color: #fff; margin: 0;">Welcome to IMSO</h2>
+          <p style="font-size: 13px; color: var(--text-secondary); margin-top: 2px;">Let's configure your local shop specialized categories</p>
+        </div>
+      </div>
+
+      <!-- Step Progress Bar -->
+      <div style="display: flex; height: 4px; background: rgba(255,255,255,0.05);">
+        <div id="onboarding-progress" style="width: 25%; height: 100%; background: var(--accent-color); transition: width 0.4s ease;"></div>
+      </div>
+
+      <div style="padding: 32px; min-height: 480px; display: flex; flex-direction: column;">
+        
+        <!-- Step 1: Mode Selection -->
+        <div id="onboarding-step-1" class="onboarding-step">
+          <h3 style="font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 24px;">How would you like to start?</h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="onboarding-option-card clickable" onclick="setOnboardingMode('templates')">
+              <div style="background: rgba(59, 130, 246, 0.1); padding: 16px; border-radius: 50%; margin-bottom: 12px;">
+                <i data-lucide="layout-template" style="color: var(--accent-color); width: 32px; height: 32px;"></i>
+              </div>
+              <h4>Use Templates</h4>
+              <p>Select from pre-defined business types like Supermarket, Pharmacy, etc.</p>
+            </div>
+            <div class="onboarding-option-card clickable" onclick="setOnboardingMode('empty')">
+              <div style="background: rgba(16, 185, 129, 0.1); padding: 16px; border-radius: 50%; margin-bottom: 12px;">
+                <i data-lucide="plus-circle" style="color: var(--accent-success); width: 32px; height: 32px;"></i>
+              </div>
+              <h4>Empty System</h4>
+              <p>Start fresh and create your own categories manually later.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: Template Selection -->
+        <div id="onboarding-step-2" class="onboarding-step" style="display: none;">
+          <h3 style="font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 8px;">Select Business Templates</h3>
+          <p class="subtitle" style="margin-bottom: 24px;">You can choose multiple that match your shop's inventory profile.</p>
+          
+          <div id="onboarding-template-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; max-height: 280px; overflow-y: auto; padding-right: 8px;">
+            <!-- Templates injected here -->
+          </div>
+        </div>
+
+        <!-- Step 3: Description -->
+        <div id="onboarding-step-3" class="onboarding-step" style="display: none;">
+          <h3 style="font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 8px;">Tell us more about your goods</h3>
+          <p class="subtitle" style="margin-bottom: 24px;">Briefly describe what you sell. We will use this to suggest missing categories.</p>
+          
+          <div class="form-group">
+            <label for="onboarding-description">Business Description</label>
+            <textarea id="onboarding-description" class="input-control" rows="6" placeholder="e.g. We sell groceries, toiletries, snacks, drinks, charger cables, earphones, phone cases, and power banks." style="padding: 16px; font-size: 14px;"></textarea>
+          </div>
+          <div id="onboarding-description-error" style="display: none; color: var(--accent-danger); font-size: 12px; margin-top: 8px;">Please provide a short description to get suggestions.</div>
+        </div>
+
+        <!-- Step 4: Review Suggestions -->
+        <div id="onboarding-step-4" class="onboarding-step" style="display: none;">
+          <h3 style="font-size: 17px; font-weight: 700; color: #fff; margin-bottom: 8px;">Review Categories to Import</h3>
+          <p class="subtitle" style="margin-bottom: 24px;">Review the list below. Uncheck any category you don't need right now.</p>
+          
+          <div id="onboarding-review-list" style="max-height: 300px; overflow-y: auto; background: rgba(0,0,0,0.3); border: 1px solid var(--border-glass); border-radius: 12px; padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+            <!-- Categories injected here -->
+          </div>
+        </div>
+
+        <!-- Footer / Navigation -->
+        <div style="margin-top: auto; padding-top: 32px; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-glass);">
+          <button id="onboarding-prev" class="btn" style="visibility: hidden; font-weight: 600;" onclick="onboardingPrev()"><i data-lucide="chevron-left" style="width: 18px; height: 18px;"></i> Back</button>
+          <div id="onboarding-dots" style="display: flex; gap: 8px;">
+            <div class="onboarding-dot active"></div>
+            <div class="onboarding-dot"></div>
+            <div class="onboarding-dot"></div>
+            <div class="onboarding-dot"></div>
+          </div>
+          <button id="onboarding-next" class="btn btn-primary" style="font-weight: 700; padding: 10px 24px;" onclick="onboardingNext()">Continue <i data-lucide="chevron-right" style="width: 18px; height: 18px;"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- FORCED PASSWORD CHANGE SCREEN (FULL SCREEN BLOCK) -->
   <div id="forced-password-container" class="login-container" style="display: none; z-index: 9999999; position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;">

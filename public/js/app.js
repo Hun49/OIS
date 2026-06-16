@@ -445,8 +445,8 @@ window.addEventListener('DOMContentLoaded', () => {
   document.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal') && e.target.classList.contains('active')) {
       const modalId = e.target.id;
-      // Do NOT close confirmation modals on backdrop click
-      if (modalId === 'dynamic-custom-confirm') return;
+      // Do NOT close confirmation or onboarding modals on backdrop click
+      if (modalId === 'dynamic-custom-confirm' || modalId === 'modal-onboarding') return;
 
       // Close if it's a standard modal or the alert overlay (alert allows backdrop close)
       if (modalId === 'dynamic-custom-alert') {
@@ -514,6 +514,7 @@ function checkSession() {
         loadCategories();
         checkLowStockAlerts();
         
+        checkOnboarding();
         routeUserToAllowedView();
       } else {
         showLoginLayout();
@@ -648,6 +649,7 @@ function handleForcedPasswordReset(e) {
       showAppLayout();
       loadSettingsData();
       loadCategories();
+      checkOnboarding();
       checkLowStockAlerts();
 
       routeUserToAllowedView();
@@ -1308,9 +1310,12 @@ function calculateSellPrice() {
 function toggleVariantSection(checked) {
   const vSec = document.getElementById('variants-section');
   const simpleSec = document.getElementById('simple-pricing-section');
+  const qtyContainer = document.getElementById('prod-initial-qty-container');
+
   if (checked) {
     vSec.style.display = 'block';
     simpleSec.style.display = 'none';
+    if (qtyContainer) qtyContainer.style.display = 'none';
     // Add default row
     if (document.getElementById('variants-list').children.length === 0) {
       addVariantRow();
@@ -1318,6 +1323,7 @@ function toggleVariantSection(checked) {
   } else {
     vSec.style.display = 'none';
     simpleSec.style.display = 'flex';
+    if (qtyContainer) qtyContainer.style.display = 'block';
   }
 }
 
@@ -2600,4 +2606,243 @@ function openReturnItemPicker() {
         `;
       });
     });
+}
+
+// -------------------------------------------------------------------------
+// ONBOARDING WIZARD LOGIC (First Login Setup)
+// -------------------------------------------------------------------------
+let onboardingState = {
+  currentStep: 1,
+  mode: 'templates', // 'templates' or 'empty'
+  templates: [],
+  selectedTemplateIds: [],
+  businessDescription: '',
+  suggestedCategories: []
+};
+
+async function checkOnboarding() {
+  if (!currentUser || currentUser.role_type !== 'owner') return;
+
+  try {
+    const res = await fetch('/api/onboarding/status');
+    const data = await res.json();
+
+    if (data.isComplete === false) {
+      onboardingState.templates = data.templates || [];
+      openOnboardingWizard();
+    }
+  } catch (err) {
+    console.error('Failed to check onboarding status:', err);
+  }
+}
+
+function openOnboardingWizard() {
+  onboardingState.currentStep = 1;
+  onboardingState.selectedTemplateIds = [];
+  onboardingState.businessDescription = '';
+  onboardingState.suggestedCategories = [];
+  
+  document.getElementById('modal-onboarding').classList.add('active');
+  updateOnboardingUI();
+}
+
+function setOnboardingMode(mode) {
+  onboardingState.mode = mode;
+  if (mode === 'empty') {
+    // Skip directly to a simplified finalize or just move to a confirm step
+    // But requirement says "Allow choosing template OR empty system"
+    // If empty system, we can just finalize.
+  }
+  onboardingNext();
+}
+
+function onboardingNext() {
+  if (onboardingState.currentStep === 1) {
+    if (onboardingState.mode === 'empty') {
+      finalizeOnboarding(true); 
+      return;
+    }
+    onboardingState.currentStep = 2;
+    renderOnboardingTemplates();
+  } else if (onboardingState.currentStep === 2) {
+    if (onboardingState.selectedTemplateIds.length === 0) {
+      showToast('Please select at least one template.', 'warning');
+      return;
+    }
+    onboardingState.currentStep = 3;
+  } else if (onboardingState.currentStep === 3) {
+    const desc = document.getElementById('onboarding-description').value.trim();
+    if (!desc) {
+      document.getElementById('onboarding-description-error').style.display = 'block';
+      return;
+    }
+    onboardingState.businessDescription = desc;
+    document.getElementById('onboarding-description-error').style.display = 'none';
+    fetchSuggestions(desc);
+    onboardingState.currentStep = 4;
+  } else if (onboardingState.currentStep === 4) {
+    finalizeOnboarding(false);
+    return;
+  }
+  updateOnboardingUI();
+}
+
+function onboardingPrev() {
+  if (onboardingState.currentStep > 1) {
+    onboardingState.currentStep--;
+    updateOnboardingUI();
+  }
+}
+
+function updateOnboardingUI() {
+  const steps = [1, 2, 3, 4];
+  steps.forEach(s => {
+    const el = document.getElementById(`onboarding-step-${s}`);
+    if (el) el.style.display = (onboardingState.currentStep === s) ? 'flex' : 'none';
+    if (el) el.style.flexDirection = 'column';
+  });
+
+  // Progress Bar
+  const progress = (onboardingState.currentStep / 4) * 100;
+  document.getElementById('onboarding-progress').style.width = `${progress}%`;
+
+  // Dots
+  const dots = document.querySelectorAll('.onboarding-dot');
+  dots.forEach((dot, index) => {
+    dot.className = index === onboardingState.currentStep - 1 ? 'onboarding-dot active' : 'onboarding-dot';
+  });
+
+  // Buttons
+  const nextBtn = document.getElementById('onboarding-next');
+  const prevBtn = document.getElementById('onboarding-prev');
+
+  prevBtn.style.visibility = onboardingState.currentStep === 1 ? 'hidden' : 'visible';
+  nextBtn.innerHTML = onboardingState.currentStep === 4 ? 'Complete Setup <i data-lucide="check"></i>' : 'Continue <i data-lucide="chevron-right"></i>';
+  
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderOnboardingTemplates() {
+  const container = document.getElementById('onboarding-template-list');
+  container.innerHTML = onboardingState.templates.map(t => `
+    <div class="template-checkbox-card ${onboardingState.selectedTemplateIds.includes(t.id) ? 'selected' : ''}" onclick="toggleOnboardingTemplate('${t.id}')">
+      <div style="width: 18px; height: 18px; border: 1px solid var(--border-glass); border-radius: 4px; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.3);">
+        ${onboardingState.selectedTemplateIds.includes(t.id) ? '<i data-lucide="check" style="width:12px; height:12px; color:var(--accent-color);"></i>' : ''}
+      </div>
+      <div style="flex: 1;">
+        <div style="font-size: 14px; font-weight: 600; color: #fff;">${t.name}</div>
+        <div style="font-size: 10px; color: var(--text-secondary);">${t.description}</div>
+      </div>
+    </div>
+  `).join('');
+  if (window.lucide) lucide.createIcons();
+}
+
+function toggleOnboardingTemplate(id) {
+  const index = onboardingState.selectedTemplateIds.indexOf(id);
+  if (index === -1) {
+    onboardingState.selectedTemplateIds.push(id);
+  } else {
+    onboardingState.selectedTemplateIds.splice(index, 1);
+  }
+  renderOnboardingTemplates();
+}
+
+async function fetchSuggestions(description) {
+  try {
+    const res = await fetch('/api/onboarding/suggest', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description })
+    });
+    const data = await res.json();
+    onboardingState.suggestedCategories = data.suggestions || [];
+    renderOnboardingReview();
+  } catch (err) {
+    console.error('Failed to get suggestions:', err);
+    renderOnboardingReview();
+  }
+}
+
+function renderOnboardingReview() {
+  const container = document.getElementById('onboarding-review-list');
+  if (!container) return;
+  
+  // Aggregate categories from templates
+  let templateCategories = new Set();
+  onboardingState.selectedTemplateIds.forEach(id => {
+    const t = onboardingState.templates.find(temp => temp.id === id);
+    if (t) t.categories.forEach(cat => templateCategories.add(cat));
+  });
+
+  const categories = [
+    ...Array.from(templateCategories).map(cat => ({ name: cat, type: 'template' })),
+    ...onboardingState.suggestedCategories.map(cat => ({ name: cat, type: 'suggestion' }))
+  ];
+
+  if (categories.length === 0) {
+    container.innerHTML = '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 20px;">No categories selected.</div>';
+    return;
+  }
+
+  container.innerHTML = categories.map((cat, idx) => `
+    <div style="display: flex; align-items: center; gap: 10px; background: rgba(255,255,255,0.02); padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border-glass);">
+      <input type="checkbox" checked id="cat-review-${idx}" data-cat-name="${cat.name}" style="width: 14px; height: 14px; accent-color: var(--accent-color);">
+      <div style="flex: 1; overflow: hidden;">
+        <div style="font-size: 13px; font-weight: 500; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${cat.name}</div>
+        <div style="font-size: 9px; text-transform: uppercase; color: ${cat.type === 'template' ? 'var(--text-muted)' : 'var(--accent-warning)'};">${cat.type === 'template' ? 'From Template' : 'AI Suggested'}</div>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function finalizeOnboarding(isEmpty) {
+  let customCategories = [];
+  if (!isEmpty) {
+    const checkboxes = document.querySelectorAll('#onboarding-review-list input[type="checkbox"]:checked');
+    checkboxes.forEach(cb => customCategories.push(cb.getAttribute('data-cat-name')));
+  }
+
+  try {
+    const res = await fetch('/api/onboarding/process', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        selectedTemplateIds: onboardingState.selectedTemplateIds,
+        businessDescription: onboardingState.businessDescription,
+        emptySystem: isEmpty,
+        customCategories
+      })
+    });
+    
+    const data = await res.json();
+    if (data.success) {
+      showToast('Onboarding complete! Your shop categories are ready.', 'success');
+      closeModal('modal-onboarding');
+      // Refresh categories list
+      loadCategories();
+    } else {
+      showToast(data.error || 'Failed to complete onboarding.', 'error');
+    }
+  } catch (err) {
+    console.error('Failed to finalize onboarding:', err);
+    showToast('Network error during onboarding.', 'error');
+  }
+}
+
+function confirmResetOnboarding() {
+  showConfirm(
+    'Are you sure you want to reset the onboarding wizard? This will not delete existing categories, but will show the setup guide again on next login.',
+    () => {
+      fetch('/api/onboarding/reset', { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) {
+            showToast('Onboarding state reset successfully.', 'success');
+          }
+        });
+    },
+    null,
+    'Reset Setup Wizard'
+  );
 }
